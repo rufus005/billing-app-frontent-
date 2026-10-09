@@ -5,6 +5,9 @@ import type {
   Invoice,
 } from "../utils/invoiceTypes";
 const tokenKey = "billing-app:token";
+const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:5000")
+  .trim()
+  .replace(/\/+$/, "");
 export const session = {
   get: () => sessionStorage.getItem(tokenKey),
   set: (token: string) => sessionStorage.setItem(tokenKey, token),
@@ -18,7 +21,7 @@ export async function api<T>(
   let response: Response;
   try {
     response = await fetch(
-      `${import.meta.env.VITE_API_URL || "http://localhost:5000"}/api${path}`,
+      `${apiBaseUrl}/api${path}`,
       {
         method,
         headers: {

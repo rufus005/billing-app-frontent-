@@ -8,13 +8,15 @@ Requires Node.js 22.12+.
 
 ```sh
 npm install
-# Fill the ignored .env using .env.example, including the real Atlas password.
-npm run server
-# In another terminal:
+# Copy .env.example to .env if needed. VITE_API_URL points to the hosted backend.
 npm run dev
 ```
 
-Open http://localhost:5173. For production, run `npm run build`, serve `dist/`, and run the backend with the appropriate API URL and allowed client origin. `npm run preview` serves the build locally. Fonts are bundled locally; the app does not request third-party fonts or barcode services.
+Open http://localhost:5173. The backend is hosted separately; this checkout does not contain `server/server.js`. For production, run `npm run build` and serve `dist/`. `npm run preview` serves the build locally. Fonts are bundled locally; the app does not request third-party fonts or barcode services.
+
+The committed `.env.production` sets the hosted backend for builds. Set `VITE_API_URL` to the backend origin, without `/api`; the API client appends `/api` automatically. Local development reads `.env`. Restart Vite after changing `.env`, and rebuild/redeploy after changing production configuration. A `VITE_API_URL` set in the frontend's Vercel project overrides the file value at build time.
+
+The backend must allow the frontend origin through CORS (including `http://localhost:5173` for development), the `Content-Type` and `Authorization` headers, and the API's HTTP methods. The supplied backend URL currently redirects unauthenticated requests to Vercel sign-in. Use a publicly reachable backend deployment URL for browser API access; billing login still uses the application's own authentication. Never put Vercel bypass tokens or backend secrets in `VITE_*` variables.
 
 ## Features
 
