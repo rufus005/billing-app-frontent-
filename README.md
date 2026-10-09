@@ -16,7 +16,30 @@ Open http://localhost:5173. The backend is hosted separately; this checkout does
 
 The committed `.env.production` sets the hosted backend for builds. Set `VITE_API_URL` to the backend origin, without `/api`; the API client appends `/api` automatically. Local development reads `.env`. Restart Vite after changing `.env`, and rebuild/redeploy after changing production configuration. A `VITE_API_URL` set in the frontend's Vercel project overrides the file value at build time.
 
-The backend must allow the frontend origin through CORS (including `http://localhost:5173` for development), the `Content-Type` and `Authorization` headers, and the API's HTTP methods. The supplied backend URL currently redirects unauthenticated requests to Vercel sign-in. Use a publicly reachable backend deployment URL for browser API access; billing login still uses the application's own authentication. Never put Vercel bypass tokens or backend secrets in `VITE_*` variables.
+Production configuration in Vercel (Production environment):
+
+| Project | Variable | Value |
+| --- | --- | --- |
+| `billing-app-frontent` | `VITE_API_URL` | `https://billing-app-mongodb-9ozg.vercel.app` |
+| `billing-app-mongodb-9ozg` | `CLIENT_URL` | `https://billing-app-frontent.vercel.app` |
+| `billing-app-mongodb-9ozg` | `MONGO_URI` | Your actual MongoDB connection URI, stored as a secret |
+| `billing-app-mongodb-9ozg` | `JWT_SECRET` | A strong private signing secret |
+| `billing-app-mongodb-9ozg` | `ADMIN_USERNAME` | Your intended admin username |
+| `billing-app-mongodb-9ozg` | `ADMIN_PASSWORD` | Your intended admin password, stored as a secret |
+
+The inspected backend reads `CLIENT_URL`, not `CLIENT_ORIGIN`. It accepts comma-separated exact origins; append `http://localhost:5173` only if local development must access this backend. Do not add a trailing slash to origins. CORS must permit `Content-Type`, `Authorization`, and the API methods. Never put backend credentials or Vercel bypass tokens in `VITE_*` variables.
+
+Redeploy the backend after configuring its variables. Update the frontend's existing Vercel `VITE_API_URL` override and redeploy the frontend: Vite embeds this value at build time. The branch deployment URL is protected by Vercel authentication and is unsuitable as the public browser API URL. This frontend checkout does not deploy the backend.
+
+The login form sends `POST /api/auth/login` with JSON `{ "username": "...", "password": "..." }`; success returns a token stored in sessionStorage. Existing sessions use `GET /api/auth/me` with `Authorization: Bearer <token>`. Other API 401 responses clear the session; login 401 responses display the server message. The frontend does not call a health endpoint automatically. Use `GET /api/health` to check the database; `/health` is not a route, and the root metadata response alone does not prove database readiness.
+
+Verify after deployment:
+
+1. `GET https://billing-app-mongodb-9ozg.vercel.app/api/health` must return 200 with `database: "connected"`. The backend connects using `MONGO_URI` during startup; check function logs for sanitized configuration/connection failures. Verify MongoDB credentials and Atlas network access if it remains disconnected.
+2. Send an OPTIONS preflight to `/api/auth/login` with `Origin: https://billing-app-frontent.vercel.app`, `Access-Control-Request-Method: POST`, and `Access-Control-Request-Headers: content-type`. It must succeed with `Access-Control-Allow-Origin` matching that exact origin. Repeat for GET with `authorization,content-type` for authenticated calls.
+3. Open the deployed frontend and check DevTools Network while logging in. The URL must be `https://billing-app-mongodb-9ozg.vercel.app/api/auth/login` (one `/api`). Invalid credentials should return a readable 401; valid credentials should return 200. Refresh to verify `/api/auth/me`, then verify products, buyers, buyer prices and invoices load without changing records.
+
+Failure interpretation: a 404 or HTML response suggests a wrong URL/path or deployment protection; a rejected preflight or missing allow-origin header is CORS; `503 Login is not configured` means missing admin/JWT configuration; health 503 with `database: "disconnected"` is a separate MongoDB problem. The browser's generic fetch failure cannot distinguish CORS from DNS/network failures; inspect Network and backend logs. HTTP JSON errors are displayed using the server's `message`.
 
 ## Features
 
