@@ -1,0 +1,217 @@
+import { jsPDF } from "jspdf";
+import autoTable, { type RowInput } from "jspdf-autotable";
+import type { Invoice, Seller } from "./invoiceTypes";
+import { calculate, money } from "./calculations";
+import { amountToWords } from "./amountToWords";
+export const declaration =
+  "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.";
+let fontCache: Promise<string[]> | undefined;
+function fonts() {
+  return (fontCache ??= Promise.all(
+    ["InvoiceSans.ttf", "InvoiceSans-Bold.ttf"].map(async (name) => {
+      const r = await fetch(`${import.meta.env.BASE_URL}fonts/${name}`);
+      if (!r.ok) throw new Error("Could not load the local invoice font.");
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      let binary = "";
+      for (let n = 0; n < bytes.length; n += 8192)
+        binary += String.fromCharCode(...bytes.subarray(n, n + 8192));
+      return btoa(binary);
+    }),
+  ).catch((e) => {
+    fontCache = undefined;
+    throw e;
+  }));
+}
+export async function generatePDF(i: Invoice, s: Seller) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5" });
+  const [normal, bold] = await fonts();
+  doc.addFileToVFS("InvoiceSans.ttf", normal);
+  doc.addFont("InvoiceSans.ttf", "Invoice", "normal");
+  doc.addFileToVFS("InvoiceSans-Bold.ttf", bold);
+  doc.addFont("InvoiceSans-Bold.ttf", "Invoice", "bold");
+  doc.setFont("Invoice");
+  doc.setProperties({ title: `Sales Invoice ${i.number}`, author: s.name });
+  const styles = {
+    font: "Invoice",
+    fontSize: 6.3,
+    textColor: 0,
+    lineColor: 0,
+    lineWidth: 0.15,
+    cellPadding: 1.1,
+  };
+  const header = () => {
+    autoTable(doc, {
+      startY: 7,
+      margin: { left: 7, right: 7 },
+      theme: "grid",
+      styles,
+      body: [
+        [
+          {
+            content: "SALES INVOICE",
+            styles: { fontStyle: "bold", halign: "center" },
+            colSpan: 2,
+          },
+          { content: i.time, styles: { halign: "center" } },
+        ],
+        [
+          {
+            content: `${s.name}\n${s.address}\nGSTIN: ${s.gstin}  Ph: ${s.phone}`,
+            styles: { cellWidth: 80 },
+          },
+          { content: `Invoice No.\n${i.number}`, styles: { cellWidth: 27 } },
+          { content: `Dated\n${i.date}` },
+        ],
+        [
+          {
+            content: `Buyer: ${i.buyer.name || "—"}\n${i.buyer.address || "—"}\nGSTIN: ${i.buyer.gstin || "—"}  Mobile: ${i.buyer.mobile || "—"}`,
+          },
+          { content: `Invoice Mode\n${i.mode}` },
+          { content: `Vehicle No.\n${i.vehicle || "—"}` },
+        ],
+      ],
+      columnStyles: {
+        0: { cellWidth: 80 },
+        1: { cellWidth: 27 },
+        2: { cellWidth: 27 },
+      },
+    });
+    return (
+      (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable
+        .finalY + 2
+    );
+  };
+  const top = header();
+  autoTable(doc, {
+    startY: top,
+    margin: { top, bottom: 9, left: 7, right: 7 },
+    theme: "grid",
+    styles,
+    headStyles: { fillColor: 255, textColor: 0, fontStyle: "bold" },
+    head: [
+      [
+        "Sl No",
+        "Item Description",
+        "HSN Code",
+        "Bill Qty",
+        "Price (₹)",
+        "Amount (₹)",
+      ],
+    ],
+    body: i.items.map((r, n) => [
+      n + 1,
+      r.name,
+      r.hsn,
+      r.qty.toFixed(2),
+      (r.finalPrice ?? r.price).toFixed(2),
+      (
+        Math.round((r.qty * (r.finalPrice ?? r.price) + Number.EPSILON) * 100) /
+        100
+      ).toFixed(2),
+    ]),
+    columnStyles: {
+      0: { cellWidth: 9 },
+      1: { cellWidth: 49 },
+      2: { cellWidth: 19 },
+      3: { cellWidth: 15, halign: "right" },
+      4: { cellWidth: 19, halign: "right" },
+      5: { cellWidth: 23, halign: "right" },
+    },
+    rowPageBreak: "avoid",
+    willDrawPage: (data) => {
+      if (data.pageNumber > 1) header();
+    },
+  });
+  let y =
+    (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable
+      .finalY + 2;
+  const t = calculate(i);
+  // All final sections form one measured table, so AutoTable moves the entire block when needed.
+  const body: RowInput[] = [
+    [
+      {
+        content: `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}`,
+        rowSpan: 5,
+        styles: { cellWidth: 73 },
+      },
+      { content: `Total Qty: ${t.qty}    Sale Amount: ${money(t.sale)}` },
+    ],
+    [{ content: `Special Discount: ${money(i.discount)}` }],
+    [{ content: `Return Amount: ${money(i.returns)}` }],
+    [{ content: `Net Sale Amount: ${money(t.net)}` }],
+    [
+      {
+        content: `Grand Total: ${money(t.grand)}`,
+        styles: { fontStyle: "bold" },
+      },
+    ],
+    [{ content: "", colSpan: 2, styles: { minCellHeight: 14 } }],
+    [
+      {
+        content: amountToWords(t.grand),
+        colSpan: 2,
+        styles: { fontStyle: "bold" },
+      },
+    ],
+    [
+      {
+        content: `Declaration\n${i.declaration || declaration}`,
+        styles: { cellWidth: 73, minCellHeight: 22 },
+      },
+      {
+        content: `For ${s.name}\n\nAuthorised Signatory`,
+        styles: { halign: "center" as const },
+      },
+    ],
+  ];
+  autoTable(doc, {
+    startY: y,
+    margin: { top, bottom: 10, left: 7, right: 7 },
+    theme: "grid",
+    styles,
+    body,
+    pageBreak: "avoid",
+    rowPageBreak: "avoid",
+    didDrawCell: (data) => {
+      if (data.row.index === 5 && data.section === "body") {
+        const width = data.cell.width / 4;
+        const labels = [
+          "Taxable Amount",
+          `CGST (${i.items.some((r) => r.gstPercent !== undefined && r.gstPercent !== i.gst) ? "mixed" : i.gst / 2 + "%"})`,
+          `SGST (${i.items.some((r) => r.gstPercent !== undefined && r.gstPercent !== i.gst) ? "mixed" : i.gst / 2 + "%"})`,
+          "Total Tax",
+        ];
+        const values = [t.taxable, t.cgst, t.sgst, t.tax];
+        doc.setFontSize(6.3);
+        labels.forEach((label, n) => {
+          const x = data.cell.x + width * (n + 0.5);
+          doc.setFont("Invoice", "bold");
+          doc.text(label, x, data.cell.y + 4, { align: "center" });
+          doc.setFont("Invoice", "normal");
+          doc.text(values[n].toFixed(2), x, data.cell.y + 10, {
+            align: "center",
+          });
+        });
+        doc.line(
+          data.cell.x,
+          data.cell.y + 6,
+          data.cell.x + data.cell.width,
+          data.cell.y + 6,
+        );
+      }
+    },
+    columnStyles: { 0: { cellWidth: 73 }, 1: { cellWidth: 61 } },
+    willDrawPage: () => {
+      if (doc.getNumberOfPages() > 1) header();
+    },
+  });
+  const pages = doc.getNumberOfPages();
+  for (let n = 1; n <= pages; n++) {
+    doc.setPage(n);
+    doc.setFontSize(6);
+    doc.text(`Invoice ${i.number} • Page ${n} of ${pages}`, 74, 205, {
+      align: "center",
+    });
+  }
+  return doc;
+}
