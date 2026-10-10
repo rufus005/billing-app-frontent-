@@ -11,7 +11,8 @@
     "test:browser": "tsx tests/browser.mjs",
     "format": "prettier --write src tests *.json *.ts index.html README.md",
     "server": "node server/server.js",
-    "test:server": "tsx tests/server.mjs"
+    "test:server": "tsx tests/server.mjs",
+    "test:frontend": "tsx tests/payment-browser.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",

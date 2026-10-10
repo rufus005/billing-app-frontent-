@@ -51,7 +51,7 @@ Failure interpretation: a 404 or HTML response suggests a wrong URL/path or depl
 - Editable custom rows, prices and quantities; delete rows and instant recalculation.
 - Automatic recovery of the current invoice, plus a separate explicitly saved draft. Clear Draft deletes the saved snapshot and preserves the current invoice. New Invoice clears the workspace after confirmation.
 - Traditional invoice preview and selectable-text A5 PDF with local embedded fonts supporting ₹.
-- Print uses the generated PDF for consistent A5 pagination. Browser print CSS also provides an invoice-only fallback.
+- Print uses the generated PDF on A4 paper; downloads retain A5 pagination. Browser print CSS also provides an invoice-only fallback.
 
 ## Calculations
 
@@ -75,7 +75,7 @@ Runtime: React, React DOM, lucide-react, jsPDF, jspdf-autotable. Build: Vite, Ty
 
 ## PDF layout
 
-jsPDF uses an explicit 148 × 210 mm page. AutoTable draws thin black grid lines and wraps text. Product rows stay together, column headers repeat, and every page repeats the seller/buyer/invoice header. A measured final table groups bank details, totals, four-column GST summary, words and declaration; it moves to the next page if needed. Footer page numbers are outside the content area. Print and download use this same generator, independent of screen width.
+jsPDF uses A5 (148 × 210 mm) for downloads and A4 (210 × 297 mm) for printing, preserving the existing 134 mm invoice table width. AutoTable draws thin black grid lines and wraps text. Product rows stay together, column headers repeat, and every page repeats the seller/buyer/invoice header. A measured final table groups bank details, totals, four-column GST summary, words and declaration; it moves to the next page if needed. Footer page numbers are outside the content area. Print and download use this same generator with their respective paper sizes, independent of screen width.
 
 The supplied screenshots guided the product picker and traditional invoice. No DOCX file was available in the attachments, so exact Word-document typography and measurements could not be verified. Sample seller details should be reviewed and replaced before issuing invoices. The HTML preview follows the same design but PDF export is authoritative for pagination. Very long invoices use additional pages; no fixed page count is imposed.
 
@@ -83,10 +83,20 @@ The supplied screenshots guided the product picker and traditional invoice. No D
 
 ```sh
 npm test
-npm run test:server
 npm run build
-# Starts its own disposable database and servers; requires Google Chrome at /usr/bin/google-chrome:
-npm run test:browser
+# Frontend-only browser checks, mocked API; requires Chrome and Poppler tools:
+npm run test:frontend
+# Legacy integration suites require the separately maintained backend source:
+# npm run test:server
+# npm run test:browser
 ```
 
 The browser script verifies catalogue create/edit/delete, decimal price/stock, product search, code + Enter, item editing/deletion, discounts/returns, persistence after refresh, seller settings, Save/Load/Clear Draft, preview, PDF download, print iframe and print CSS, 100-item multi-page A5 dimensions, and mobile overflow. It writes screenshots and PDF artifacts to `/tmp/billing-*`. Unit tests cover GST-inclusive extraction, tax reconciliation, deductions, zero tax, over-discounts and Indian amount words. PDF text extraction checks can be run with Poppler's `pdftotext`/`pdfinfo` tools. Native print-dialog appearance and physical printer output require a manual check on the target device.
+
+## UPI and QR settings
+
+Business settings load from authenticated `GET /api/business-payment`. Save sends `PUT /api/business-payment`, then reads the settings back before reporting success. The API must return `{ upiId: string, payeeName: string, showQrOnInvoices: boolean, qrCode: string }`. The QR is a PNG/JPEG/WebP data URL (or an empty string). Replacements send `qrCode`; removals send `removeQrCode: true`; ordinary UPI-only updates preserve the saved image. Failed or unconfirmed saves keep the edits and allow retrying. Contract mismatches are shown explicitly. Payment requests time out after 20 seconds.
+
+Uploads validate MIME type, file signature, non-empty size up to 3 MiB, browser decoding, and dimensions up to 16 million pixels. Validation does not certify that an image contains a scannable QR or that its recipient matches the typed UPI ID; check both before issuing invoices. Settings and enlarged previews, invoice previews, A4 printing and A5 downloads preserve the image aspect ratio. A failed image offers retry and replacement. PDF generation reports an error if it cannot load the enabled QR. Unsaved settings are not applied to invoices; exports require loaded, confirmed settings.
+
+`npm run test:frontend` uses intercepted API fixtures, never the live database. It covers login/session restoration, load/save errors and retry, upload validation/replacement/removal, readback mismatches, reload persistence, QR visibility and image recovery, buyer/product/sales navigation, draft editing, invoice preview, A4 print output, A5 download and multi-page output, and mobile layout. Artifacts are written to `/tmp/billing-payment-*`. These checks validate frontend behavior against the documented API contract, not production database writes. The legacy `test:browser` and `test:server` scripts require absent `server/` files and are retained for use alongside the backend checkout.

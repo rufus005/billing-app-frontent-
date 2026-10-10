@@ -2057,3 +2057,24 @@ select {
 .invoice-bank-layout:not(:has(.invoice-qr)) {
   grid-template-columns: 1fr;
 }
+
+.qr-image-error {
+  padding: 8px;
+  color: #9f1239;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.qr-image-error button {
+  margin-top: 8px;
+}
+.invoice-bank-layout:has(.qr-image-error) {
+  grid-template-columns: 1fr;
+}
+.invoice-qr {
+  background: white;
+}
+@media print {
+  .qr-image-error button {
+    display: none;
+  }
+}

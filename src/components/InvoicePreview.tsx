@@ -1,3 +1,4 @@
+import { PaymentQr } from "./PaymentQr";
 import type {
   BusinessPaymentSettings,
   Invoice,
@@ -116,9 +117,9 @@ export function InvoicePreview({
               {payment.payeeName && <p>Payee: {payment.payeeName}</p>}
             </div>
             {payment.showQrOnInvoices !== false && payment.qrCode && (
-              <img
+              <PaymentQr
                 className="invoice-qr"
-                src={payment.qrCode}
+                source={payment.qrCode}
                 alt="Business UPI payment QR code"
               />
             )}

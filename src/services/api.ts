@@ -18,32 +18,38 @@ export async function api<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  timeoutMs?: number,
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(
-      `${apiBaseUrl}/api${path}`,
-      {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(session.get()
-            ? { Authorization: `Bearer ${session.get()}` }
-            : {}),
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
+    response = await fetch(`${apiBaseUrl}/api${path}`, {
+      method,
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+      headers: {
+        "Content-Type": "application/json",
+        ...(session.get() ? { Authorization: `Bearer ${session.get()}` } : {}),
       },
-    );
-  } catch {
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError")
+      throw Error("The server took too long to respond. Please retry.");
     throw Error("Server unavailable. Check that the backend is running.");
   }
-  const data = await response.json();
+  if (response.status === 401 && path !== "/auth/login") {
+    session.clear();
+    window.dispatchEvent(new Event("billing-logout"));
+  }
+  const data = await response.json().catch(() => {
+    throw Error(
+      `The server returned an unreadable response (HTTP ${response.status}). Please retry.`,
+    );
+  });
   if (!response.ok) {
-    if (response.status === 401 && path != "/auth/login") {
-      session.clear();
-      window.dispatchEvent(new Event("billing-logout"));
-    }
-    throw Error(data.message || "Request failed.");
+    throw Error(
+      data?.message ||
+        `Request failed (HTTP ${response.status}). Please retry.`,
+    );
   }
   return data;
 }
@@ -65,7 +71,27 @@ export const buyerApi = resource<BuyerRecord>("/buyers");
 export const buyerPriceApi = resource<BuyerPrice>("/buyer-prices");
 export const invoiceApi = resource<Invoice>("/invoices");
 export const businessPaymentApi = {
-  get: () => api<BusinessPaymentSettings>("/business-payment"),
-  save: (value: Partial<BusinessPaymentSettings> & { removeQrCode?: boolean }) =>
-    api<BusinessPaymentSettings>("/business-payment", "PUT", value),
+  get: () =>
+    api<unknown>("/business-payment", "GET", undefined, 20000).then(
+      parsePaymentSettings,
+    ),
+  save: (
+    value: Partial<BusinessPaymentSettings> & { removeQrCode?: boolean },
+  ) => api<unknown>("/business-payment", "PUT", value, 20000),
 };
+
+function parsePaymentSettings(value: unknown): BusinessPaymentSettings {
+  const data = value as BusinessPaymentSettings | null;
+  if (
+    !data ||
+    typeof data.upiId !== "string" ||
+    typeof data.qrCode !== "string" ||
+    typeof data.payeeName !== "string" ||
+    typeof data.showQrOnInvoices !== "boolean"
+  ) {
+    throw new Error(
+      "Backend API mismatch: business-payment must return upiId, qrCode, payeeName and showQrOnInvoices. Please retry after the API is updated.",
+    );
+  }
+  return data;
+}

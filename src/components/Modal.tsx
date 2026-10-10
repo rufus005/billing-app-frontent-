@@ -23,7 +23,8 @@ export function Modal({
           'button,input,select,textarea,[tabindex="0"]',
         ) || [],
       ).filter((x) => !x.hasAttribute("disabled"));
-    focusables()[1]?.focus();
+    const initialFocus = focusables();
+    (initialFocus[1] || initialFocus[0])?.focus();
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
