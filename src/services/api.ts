@@ -3,6 +3,7 @@ import type {
   BuyerRecord,
   BuyerPrice,
   Invoice,
+  BusinessPaymentSettings,
 } from "../utils/invoiceTypes";
 const tokenKey = "billing-app:token";
 const apiBaseUrl = (import.meta.env.VITE_API_URL || "http://localhost:5000")
@@ -63,3 +64,8 @@ export const productApi = resource<Product>("/products");
 export const buyerApi = resource<BuyerRecord>("/buyers");
 export const buyerPriceApi = resource<BuyerPrice>("/buyer-prices");
 export const invoiceApi = resource<Invoice>("/invoices");
+export const businessPaymentApi = {
+  get: () => api<BusinessPaymentSettings>("/business-payment"),
+  save: (value: Partial<BusinessPaymentSettings> & { removeQrCode?: boolean }) =>
+    api<BusinessPaymentSettings>("/business-payment", "PUT", value),
+};

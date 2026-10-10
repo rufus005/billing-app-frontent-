@@ -1,13 +1,19 @@
-import type { Invoice, Seller } from "../utils/invoiceTypes";
+import type {
+  BusinessPaymentSettings,
+  Invoice,
+  Seller,
+} from "../utils/invoiceTypes";
 import { calculate, money, round } from "../utils/calculations";
 import { amountToWords } from "../utils/amountToWords";
 import { declaration } from "../utils/pdfGenerator";
 export function InvoicePreview({
   invoice: i,
   seller: s,
+  payment = { upiId: "", qrCode: "" },
 }: {
   invoice: Invoice;
   seller: Seller;
+  payment?: BusinessPaymentSettings;
 }) {
   const t = calculate(i);
   return (
@@ -95,15 +101,27 @@ export function InvoicePreview({
       </table>
       <div className="invoice-bottom">
         <div className="invoice-bank">
-          <strong>Bank Details</strong>
-          <p>
-            {s.bank} – {s.branch}
-          </p>
-          <p>
-            Account No.: {s.account}
-            <br />
-            IFSC: {s.ifsc}
-          </p>
+          <div className="invoice-bank-layout">
+            <div>
+              <strong>Bank Details</strong>
+              <p>
+                {s.bank} – {s.branch}
+              </p>
+              <p>
+                Account No.: {s.account}
+                <br />
+                IFSC: {s.ifsc}
+              </p>
+              {payment.upiId && <p>UPI ID: {payment.upiId}</p>}
+            </div>
+            {payment.qrCode && (
+              <img
+                className="invoice-qr"
+                src={payment.qrCode}
+                alt="Business UPI payment QR code"
+              />
+            )}
+          </div>
         </div>
         <div className="invoice-sums">
           {[

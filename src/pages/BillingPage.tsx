@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ReceiptText,
   Package,
@@ -26,6 +26,7 @@ import type {
   Seller,
   BuyerRecord,
   BuyerPrice,
+  BusinessPaymentSettings,
 } from "../utils/invoiceTypes";
 import { defaultSeller, newInvoice } from "../utils/invoiceTypes";
 import { read, write, keys, getLedger } from "../utils/storage";
@@ -35,6 +36,7 @@ import {
   buyerApi,
   buyerPriceApi,
   invoiceApi,
+  businessPaymentApi,
   session,
 } from "../services/api";
 import {
@@ -147,6 +149,17 @@ export default function BillingPage() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false);
+  const [payment, setPayment] = useState<BusinessPaymentSettings>({
+    upiId: "",
+    qrCode: "",
+  });
+  const [savedPayment, setSavedPayment] = useState<BusinessPaymentSettings>({
+    upiId: "",
+    qrCode: "",
+  });
+  const [paymentLoaded, setPaymentLoaded] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const qrInput = useRef<HTMLInputElement>(null);
   const closePicker = useCallback(() => setPicker(false), []),
     closePreview = useCallback(() => setPreview(false), []);
   const persist = (key: string, data: unknown) => {
@@ -163,6 +176,54 @@ export default function BillingPage() {
   useEffect(() => {
     persist(keys.seller, seller);
   }, [seller]);
+
+  useEffect(() => {
+    businessPaymentApi
+      .get()
+      .then((value) => {
+        setPayment(value);
+        setSavedPayment(value);
+      })
+      .catch((e) => setNotice(e.message))
+      .finally(() => setPaymentLoaded(true));
+  }, []);
+  const savePaymentSettings = async () => {
+    setPaymentSaving(true);
+    try {
+      const removeQrCode = !!savedPayment.qrCode && !payment.qrCode;
+      const qrChanged =
+        !!payment.qrCode && payment.qrCode !== savedPayment.qrCode;
+      const result = await businessPaymentApi.save({
+        upiId: payment.upiId,
+        qrCode: qrChanged ? payment.qrCode : undefined,
+        removeQrCode,
+      });
+      const savedValue = { upiId: result.upiId, qrCode: payment.qrCode };
+      setPayment(savedValue);
+      setSavedPayment(savedValue);
+      setNotice("UPI payment settings saved to MongoDB.");
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setPaymentSaving(false);
+    }
+  };
+  const selectQrCode = (file?: File) => {
+    if (!file) return;
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      setNotice("Choose a PNG or JPEG QR image.");
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setNotice("QR image must be no larger than 3 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () =>
+      setPayment((old) => ({ ...old, qrCode: String(reader.result || "") }));
+    reader.onerror = () => setNotice("Could not read the selected QR image.");
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     setSaved(false);
@@ -230,7 +291,7 @@ export default function BillingPage() {
     }
     setBusy(true);
     try {
-      const doc = await generatePDF(invoice, invoice.seller || seller);
+      const doc = await generatePDF(invoice, invoice.seller || seller, payment);
       if (print) {
         const url = doc.output("bloburl");
         const frame = document.createElement("iframe");
@@ -668,9 +729,10 @@ export default function BillingPage() {
                   <h2>Local data backup and import</h2>
                   <p>
                     Existing browser data is preserved. Import copies products
+                    Existing browser data is preserved. Import copies products
                     and saved sales into an empty database, keeping current
-                    stock quantities. Seller settings and working drafts stay on
-                    this device.
+                    stock quantities. Seller details and working drafts stay on
+                    this device; UPI payment settings are saved in MongoDB.
                   </p>
                   <button
                     onClick={() => {
@@ -737,6 +799,87 @@ export default function BillingPage() {
                   </div>
                   <SellerForm seller={seller} onChange={setSeller} />
                 </section>
+                <section className="card payment-settings">
+                  <div className="section-title">
+                    <h2>UPI &amp; QR Payment Settings</h2>
+                    <span className="muted section-hint">
+                      Stored securely with your business data
+                    </span>
+                  </div>
+                  <div className="payment-settings-body">
+                    <div className="payment-qr-control">
+                      <div className="qr-preview">
+                        {payment.qrCode ? (
+                          <img src={payment.qrCode} alt="Business UPI QR preview" />
+                        ) : (
+                          <span>No QR code uploaded</span>
+                        )}
+                      </div>
+                      <input
+                        ref={qrInput}
+                        className="visually-hidden"
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        onChange={(event) => {
+                          selectQrCode(event.currentTarget.files?.[0]);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                      <div className="payment-qr-actions">
+                        <button
+                          disabled={!paymentLoaded || paymentSaving}
+                          onClick={() => qrInput.current?.click()}
+                        >
+                          {payment.qrCode ? "Replace QR Code" : "Upload QR Code"}
+                        </button>
+                        <button
+                          disabled={!payment.qrCode || paymentSaving}
+                          onClick={() =>
+                            setPayment((old) => ({ ...old, qrCode: "" }))
+                          }
+                        >
+                          Remove QR Code
+                        </button>
+                      </div>
+                    </div>
+                    <div className="payment-fields">
+                      <label className="field">
+                        <span>UPI ID</span>
+                        <input
+                          value={payment.upiId}
+                          maxLength={100}
+                          placeholder="name@bank"
+                          onChange={(event) =>
+                            setPayment((old) => ({
+                              ...old,
+                              upiId: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <div className="payment-save-row">
+                        <span className="muted">
+                          {payment.upiId !== savedPayment.upiId ||
+                          payment.qrCode !== savedPayment.qrCode
+                            ? "Unsaved changes"
+                            : "Saved to MongoDB"}
+                        </span>
+                        <button
+                          className="primary"
+                          disabled={
+                            !paymentLoaded ||
+                            paymentSaving ||
+                            (payment.upiId === savedPayment.upiId &&
+                              payment.qrCode === savedPayment.qrCode)
+                          }
+                          onClick={() => void savePaymentSettings()}
+                        >
+                          {paymentSaving ? "Saving…" : "Save UPI settings"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
               </>
             )}
           </main>
@@ -789,6 +932,7 @@ export default function BillingPage() {
             <InvoicePreview
               invoice={invoice}
               seller={invoice.seller || seller}
+              payment={payment}
             />
           </div>
           <footer>
@@ -807,7 +951,11 @@ export default function BillingPage() {
         </Modal>
       )}
       <div className="print-only">
-        <InvoicePreview invoice={invoice} seller={invoice.seller || seller} />
+        <InvoicePreview
+          invoice={invoice}
+          seller={invoice.seller || seller}
+          payment={payment}
+        />
       </div>
     </>
   );

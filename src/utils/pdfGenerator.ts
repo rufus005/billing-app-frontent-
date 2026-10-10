@@ -1,6 +1,10 @@
 import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
-import type { Invoice, Seller } from "./invoiceTypes";
+import type {
+  BusinessPaymentSettings,
+  Invoice,
+  Seller,
+} from "./invoiceTypes";
 import { calculate, money } from "./calculations";
 import { amountToWords } from "./amountToWords";
 export const declaration =
@@ -22,7 +26,11 @@ function fonts() {
     throw e;
   }));
 }
-export async function generatePDF(i: Invoice, s: Seller) {
+export async function generatePDF(
+  i: Invoice,
+  s: Seller,
+  payment: BusinessPaymentSettings = { upiId: "", qrCode: "" },
+) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5" });
   const [normal, bold] = await fonts();
   doc.addFileToVFS("InvoiceSans.ttf", normal);
@@ -130,7 +138,7 @@ export async function generatePDF(i: Invoice, s: Seller) {
   const body: RowInput[] = [
     [
       {
-        content: `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}`,
+        content: `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}`,
         rowSpan: 5,
         styles: { cellWidth: 73 },
       },
@@ -173,6 +181,24 @@ export async function generatePDF(i: Invoice, s: Seller) {
     pageBreak: "avoid",
     rowPageBreak: "avoid",
     didDrawCell: (data) => {
+      if (
+        payment.qrCode &&
+        data.section === "body" &&
+        data.row.index === 0 &&
+        data.column.index === 0
+      ) {
+        const format = payment.qrCode.startsWith("data:image/jpeg")
+          ? "JPEG"
+          : "PNG";
+        doc.addImage(
+          payment.qrCode,
+          format,
+          data.cell.x + data.cell.width - 21,
+          data.cell.y + 2,
+          19,
+          19,
+        );
+      }
       if (data.row.index === 5 && data.section === "body") {
         const width = data.cell.width / 4;
         const labels = [

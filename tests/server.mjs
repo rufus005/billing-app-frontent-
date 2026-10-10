@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import mongoose from "mongoose";
 import request from "supertest";
-import { createApp, initialize } from "../server/app.js";
 import { newInvoice, defaultSeller } from "../src/utils/invoiceTypes.ts";
+process.env.MONGO_URI = "";
 process.env.ADMIN_USERNAME = "test-admin";
 process.env.ADMIN_PASSWORD = "test-password";
 process.env.JWT_SECRET = "integration-test-secret";
+const { createApp, initialize } = await import("../../server/app.js");
 const db = await MongoMemoryReplSet.create({
   replSet: { count: 1 },
   binary: { downloadDir: "/tmp/billing-mongodb" },
@@ -33,6 +34,35 @@ try {
       [method]("/api" + path)
       .set("Authorization", "Bearer " + token)
       .send(body);
+  const initialPayment = await call("get", "/business-payment");
+  assert.equal(initialPayment.status, 200, JSON.stringify(initialPayment.body));
+  assert.deepEqual(initialPayment.body, { upiId: "", qrCode: "" });
+  const qrCode =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lS8AAAAASUVORK5CYII=";
+  await call("put", "/business-payment", {
+    upiId: "billing@example",
+    qrCode,
+  }).expect(200, { upiId: "billing@example", qrCode: "" });
+  assert.deepEqual(
+    (await call("get", "/business-payment").expect(200)).body,
+    { upiId: "billing@example", qrCode },
+  );
+  await call("put", "/business-payment", {
+    upiId: "payments@example",
+  }).expect(200);
+  assert.equal(
+    (await call("get", "/business-payment").expect(200)).body.qrCode,
+    qrCode,
+  );
+  await call("put", "/business-payment", {
+    upiId: "payments@example",
+    removeQrCode: true,
+  }).expect(200);
+  assert.deepEqual(
+    (await call("get", "/business-payment").expect(200)).body,
+    { upiId: "payments@example", qrCode: "" },
+  );
+  await call("put", "/business-payment", { upiId: "bad" }).expect(400);
   const p = (
     await call("post", "/products", {
       id: "p",

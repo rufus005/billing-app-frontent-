@@ -8,6 +8,10 @@ export interface Seller {
   account: string;
   ifsc: string;
 }
+export interface BusinessPaymentSettings {
+  upiId: string;
+  qrCode: string;
+}
 export interface Buyer {
   name: string;
   address: string;
