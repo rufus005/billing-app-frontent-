@@ -1,11 +1,8 @@
 import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
-import type {
-  BusinessPaymentSettings,
-  Invoice,
-  Seller,
-} from "./invoiceTypes";
+import type { BusinessPaymentSettings, Invoice, Seller } from "./invoiceTypes";
 import { calculate, money } from "./calculations";
+import { loadPaymentImage, containImage } from "./paymentImage";
 import { amountToWords } from "./amountToWords";
 export const declaration =
   "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.";
@@ -30,8 +27,14 @@ export async function generatePDF(
   i: Invoice,
   s: Seller,
   payment: BusinessPaymentSettings = { upiId: "", qrCode: "" },
+  format: "a4" | "a5" = "a5",
 ) {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5" });
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format });
+  const margin = (doc.internal.pageSize.getWidth() - 134) / 2;
+  const qrImage =
+    payment.qrCode && payment.showQrOnInvoices !== false
+      ? await loadPaymentImage(payment.qrCode)
+      : null;
   const [normal, bold] = await fonts();
   doc.addFileToVFS("InvoiceSans.ttf", normal);
   doc.addFont("InvoiceSans.ttf", "Invoice", "normal");
@@ -50,7 +53,7 @@ export async function generatePDF(
   const header = () => {
     autoTable(doc, {
       startY: 7,
-      margin: { left: 7, right: 7 },
+      margin: { left: margin, right: margin },
       theme: "grid",
       styles,
       body: [
@@ -92,7 +95,7 @@ export async function generatePDF(
   const top = header();
   autoTable(doc, {
     startY: top,
-    margin: { top, bottom: 9, left: 7, right: 7 },
+    margin: { top, bottom: 9, left: margin, right: margin },
     theme: "grid",
     styles,
     headStyles: { fillColor: 255, textColor: 0, fontStyle: "bold" },
@@ -138,9 +141,19 @@ export async function generatePDF(
   const body: RowInput[] = [
     [
       {
-        content: `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}`,
+        content: `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}${payment.payeeName ? `\nPayee: ${payment.payeeName}` : ""}`,
         rowSpan: 5,
-        styles: { cellWidth: 73 },
+        styles: {
+          cellWidth: 73,
+          minCellHeight: qrImage ? 32 : 0,
+          cellPadding: {
+            top: 2,
+            bottom: 2,
+            left: 2,
+            right:
+              payment.qrCode && payment.showQrOnInvoices !== false ? 31 : 2,
+          },
+        },
       },
       { content: `Total Qty: ${t.qty}    Sale Amount: ${money(t.sale)}` },
     ],
@@ -174,7 +187,7 @@ export async function generatePDF(
   ];
   autoTable(doc, {
     startY: y,
-    margin: { top, bottom: 10, left: 7, right: 7 },
+    margin: { top, bottom: 10, left: margin, right: margin },
     theme: "grid",
     styles,
     body,
@@ -182,21 +195,34 @@ export async function generatePDF(
     rowPageBreak: "avoid",
     didDrawCell: (data) => {
       if (
+        payment.showQrOnInvoices !== false &&
         payment.qrCode &&
         data.section === "body" &&
         data.row.index === 0 &&
         data.column.index === 0
       ) {
-        const format = payment.qrCode.startsWith("data:image/jpeg")
-          ? "JPEG"
-          : "PNG";
+        if (!qrImage) return;
+        const size = containImage(
+          qrImage.naturalWidth,
+          qrImage.naturalHeight,
+          27,
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = qrImage.naturalWidth;
+        canvas.height = qrImage.naturalHeight;
+        const context = canvas.getContext("2d");
+        if (!context)
+          throw new Error("Could not prepare the QR image for PDF.");
+        context.fillStyle = "white";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(qrImage, 0, 0);
         doc.addImage(
-          payment.qrCode,
-          format,
-          data.cell.x + data.cell.width - 21,
-          data.cell.y + 2,
-          19,
-          19,
+          canvas.toDataURL("image/png"),
+          "PNG",
+          data.cell.x + data.cell.width - 29 + (27 - size.width) / 2,
+          data.cell.y + 2 + (27 - size.height) / 2,
+          size.width,
+          size.height,
         );
       }
       if (data.row.index === 5 && data.section === "body") {
@@ -235,9 +261,14 @@ export async function generatePDF(
   for (let n = 1; n <= pages; n++) {
     doc.setPage(n);
     doc.setFontSize(6);
-    doc.text(`Invoice ${i.number} • Page ${n} of ${pages}`, 74, 205, {
-      align: "center",
-    });
+    doc.text(
+      `Invoice ${i.number} • Page ${n} of ${pages}`,
+      doc.internal.pageSize.getWidth() / 2,
+      doc.internal.pageSize.getHeight() - 5,
+      {
+        align: "center",
+      },
+    );
   }
   return doc;
 }

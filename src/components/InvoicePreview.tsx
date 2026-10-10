@@ -113,8 +113,9 @@ export function InvoicePreview({
                 IFSC: {s.ifsc}
               </p>
               {payment.upiId && <p>UPI ID: {payment.upiId}</p>}
+              {payment.payeeName && <p>Payee: {payment.payeeName}</p>}
             </div>
-            {payment.qrCode && (
+            {payment.showQrOnInvoices !== false && payment.qrCode && (
               <img
                 className="invoice-qr"
                 src={payment.qrCode}

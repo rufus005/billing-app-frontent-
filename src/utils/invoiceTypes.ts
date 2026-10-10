@@ -10,6 +10,8 @@ export interface Seller {
 }
 export interface BusinessPaymentSettings {
   upiId: string;
+  payeeName?: string;
+  showQrOnInvoices?: boolean;
   qrCode: string;
 }
 export interface Buyer {

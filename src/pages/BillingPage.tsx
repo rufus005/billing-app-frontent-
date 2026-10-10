@@ -150,15 +150,29 @@ export default function BillingPage() {
     [busy, setBusy] = useState(false),
     [saved, setSaved] = useState(false);
   const [payment, setPayment] = useState<BusinessPaymentSettings>({
+    payeeName: "",
+    showQrOnInvoices: true,
     upiId: "",
     qrCode: "",
   });
   const [savedPayment, setSavedPayment] = useState<BusinessPaymentSettings>({
+    payeeName: "",
+    showQrOnInvoices: true,
     upiId: "",
     qrCode: "",
   });
   const [paymentLoaded, setPaymentLoaded] = useState(false);
   const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const [qrReading, setQrReading] = useState(false);
+  const [qrPreview, setQrPreview] = useState(false);
+  const closeQrPreview = useCallback(() => setQrPreview(false), []);
+  const paymentDirty =
+    payment.upiId !== savedPayment.upiId ||
+    payment.qrCode !== savedPayment.qrCode ||
+    payment.payeeName !== savedPayment.payeeName ||
+    payment.showQrOnInvoices !== savedPayment.showQrOnInvoices;
   const qrInput = useRef<HTMLInputElement>(null);
   const closePicker = useCallback(() => setPicker(false), []),
     closePreview = useCallback(() => setPreview(false), []);
@@ -177,52 +191,76 @@ export default function BillingPage() {
     persist(keys.seller, seller);
   }, [seller]);
 
-  useEffect(() => {
-    businessPaymentApi
-      .get()
-      .then((value) => {
-        setPayment(value);
-        setSavedPayment(value);
-      })
-      .catch((e) => setNotice(e.message))
-      .finally(() => setPaymentLoaded(true));
+  const loadPaymentSettings = useCallback(async () => {
+    setPaymentError("");
+    setPaymentLoaded(false);
+    try {
+      const value = await businessPaymentApi.get();
+      setPayment(value);
+      setSavedPayment(value);
+      setPaymentLoaded(true);
+    } catch (e) {
+      setPaymentError((e as Error).message);
+    }
   }, []);
+  useEffect(() => {
+    void loadPaymentSettings();
+  }, [loadPaymentSettings]);
   const savePaymentSettings = async () => {
+    if (!paymentLoaded || paymentSaving || qrReading) return;
+    if (
+      payment.upiId.trim() &&
+      !/^[a-zA-Z0-9.\-_]+@[a-zA-Z0-9]+$/.test(payment.upiId.trim())
+    ) {
+      setPaymentError("Enter a valid UPI ID, such as name@bank.");
+      return;
+    }
+    setPaymentError("");
+    setPaymentMessage("");
     setPaymentSaving(true);
     try {
       const removeQrCode = !!savedPayment.qrCode && !payment.qrCode;
       const qrChanged =
         !!payment.qrCode && payment.qrCode !== savedPayment.qrCode;
       const result = await businessPaymentApi.save({
-        upiId: payment.upiId,
+        upiId: payment.upiId.trim(),
+        payeeName: payment.payeeName?.trim() || "",
+        showQrOnInvoices: payment.showQrOnInvoices,
         qrCode: qrChanged ? payment.qrCode : undefined,
         removeQrCode,
       });
-      const savedValue = { upiId: result.upiId, qrCode: payment.qrCode };
+      if (
+        result.payeeName !== (payment.payeeName?.trim() || "") ||
+        result.showQrOnInvoices !== (payment.showQrOnInvoices !== false)
+      ) {
+        throw new Error(
+          "The backend did not confirm the payee name or QR visibility. Update the business-payment API before saving these settings.",
+        );
+      }
+      const savedValue = result;
       setPayment(savedValue);
       setSavedPayment(savedValue);
-      setNotice("UPI payment settings saved to MongoDB.");
+      setPaymentMessage("Payment settings saved successfully.");
     } catch (e) {
-      setNotice((e as Error).message);
+      setPaymentError((e as Error).message);
     } finally {
       setPaymentSaving(false);
     }
   };
-  const selectQrCode = (file?: File) => {
+  const selectQrCode = async (file?: File) => {
     if (!file) return;
-    if (!["image/png", "image/jpeg"].includes(file.type)) {
-      setNotice("Choose a PNG or JPEG QR image.");
-      return;
+    setPaymentError("");
+    setPaymentMessage("");
+    setQrReading(true);
+    try {
+      const { readQrImage } = await import("../utils/paymentImage");
+      const qrCode = await readQrImage(file);
+      setPayment((old) => ({ ...old, qrCode }));
+    } catch (e) {
+      setPaymentError((e as Error).message);
+    } finally {
+      setQrReading(false);
     }
-    if (file.size > 3 * 1024 * 1024) {
-      setNotice("QR image must be no larger than 3 MB.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () =>
-      setPayment((old) => ({ ...old, qrCode: String(reader.result || "") }));
-    reader.onerror = () => setNotice("Could not read the selected QR image.");
-    reader.readAsDataURL(file);
   };
 
   useEffect(() => {
@@ -291,7 +329,12 @@ export default function BillingPage() {
     }
     setBusy(true);
     try {
-      const doc = await generatePDF(invoice, invoice.seller || seller, payment);
+      const doc = await generatePDF(
+        invoice,
+        invoice.seller || seller,
+        savedPayment,
+        print ? "a4" : "a5",
+      );
       if (print) {
         const url = doc.output("bloburl");
         const frame = document.createElement("iframe");
@@ -308,7 +351,7 @@ export default function BillingPage() {
           frame.remove();
           URL.revokeObjectURL(String(url));
         }, 120000);
-        setNotice("Print preview opened. Select A5 paper and actual size.");
+        setNotice("Print preview opened. Select A4 paper and actual size.");
       } else {
         doc.save(`${invoice.number.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
         setNotice("A5 invoice PDF downloaded.");
@@ -803,14 +846,39 @@ export default function BillingPage() {
                   <div className="section-title">
                     <h2>UPI &amp; QR Payment Settings</h2>
                     <span className="muted section-hint">
-                      Stored securely with your business data
+                      Make it easy for customers to pay
                     </span>
                   </div>
-                  <div className="payment-settings-body">
+                  {paymentError && (
+                    <div className="payment-feedback error" role="alert">
+                      {paymentError}
+                      {!paymentLoaded && (
+                        <button onClick={() => void loadPaymentSettings()}>
+                          Retry loading
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {paymentMessage && !paymentDirty && (
+                    <p className="payment-feedback success" role="status">
+                      {paymentMessage}
+                    </p>
+                  )}
+                  <div
+                    className="payment-settings-body"
+                    aria-busy={
+                      paymentSaving ||
+                      qrReading ||
+                      (!paymentLoaded && !paymentError)
+                    }
+                  >
                     <div className="payment-qr-control">
                       <div className="qr-preview">
                         {payment.qrCode ? (
-                          <img src={payment.qrCode} alt="Business UPI QR preview" />
+                          <img
+                            src={payment.qrCode}
+                            alt="Business UPI QR preview"
+                          />
                         ) : (
                           <span>No QR code uploaded</span>
                         )}
@@ -819,7 +887,9 @@ export default function BillingPage() {
                         ref={qrInput}
                         className="visually-hidden"
                         type="file"
-                        accept="image/png,image/jpeg"
+                        accept="image/png,image/jpeg,image/webp"
+                        aria-label="Business QR image"
+                        disabled={!paymentLoaded || paymentSaving || qrReading}
                         onChange={(event) => {
                           selectQrCode(event.currentTarget.files?.[0]);
                           event.currentTarget.value = "";
@@ -827,13 +897,25 @@ export default function BillingPage() {
                       />
                       <div className="payment-qr-actions">
                         <button
-                          disabled={!paymentLoaded || paymentSaving}
-                          onClick={() => qrInput.current?.click()}
+                          disabled={!payment.qrCode || qrReading}
+                          onClick={() => setQrPreview(true)}
                         >
-                          {payment.qrCode ? "Replace QR Code" : "Upload QR Code"}
+                          Preview QR
                         </button>
                         <button
-                          disabled={!payment.qrCode || paymentSaving}
+                          disabled={
+                            !paymentLoaded || paymentSaving || qrReading
+                          }
+                          onClick={() => qrInput.current?.click()}
+                        >
+                          {payment.qrCode
+                            ? "Replace QR Code"
+                            : "Upload QR Code"}
+                        </button>
+                        <button
+                          disabled={
+                            !payment.qrCode || paymentSaving || qrReading
+                          }
                           onClick={() =>
                             setPayment((old) => ({ ...old, qrCode: "" }))
                           }
@@ -847,6 +929,9 @@ export default function BillingPage() {
                         <span>UPI ID</span>
                         <input
                           value={payment.upiId}
+                          disabled={
+                            !paymentLoaded || paymentSaving || qrReading
+                          }
                           maxLength={100}
                           placeholder="name@bank"
                           onChange={(event) =>
@@ -857,24 +942,67 @@ export default function BillingPage() {
                           }
                         />
                       </label>
+                      <label className="field">
+                        <span>UPI Payee Name</span>
+                        <input
+                          value={payment.payeeName || ""}
+                          disabled={
+                            !paymentLoaded || paymentSaving || qrReading
+                          }
+                          maxLength={100}
+                          placeholder="Your Business Name"
+                          onChange={(event) =>
+                            setPayment((old) => ({
+                              ...old,
+                              payeeName: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="payment-toggle">
+                        <input
+                          role="switch"
+                          type="checkbox"
+                          checked={payment.showQrOnInvoices !== false}
+                          disabled={
+                            !paymentLoaded || paymentSaving || qrReading
+                          }
+                          onChange={(event) =>
+                            setPayment((old) => ({
+                              ...old,
+                              showQrOnInvoices: event.target.checked,
+                            }))
+                          }
+                        />{" "}
+                        Enable QR Code on Invoice
+                      </label>
+                      <p className="muted">
+                        PNG, JPG or WebP, up to 3 MB. Save changes to apply them
+                        to invoices.
+                      </p>
                       <div className="payment-save-row">
-                        <span className="muted">
-                          {payment.upiId !== savedPayment.upiId ||
-                          payment.qrCode !== savedPayment.qrCode
-                            ? "Unsaved changes"
-                            : "Saved to MongoDB"}
+                        <span className="muted" role="status">
+                          {qrReading
+                            ? "Checking image…"
+                            : !paymentLoaded
+                              ? paymentError
+                                ? "Payment settings unavailable"
+                                : "Loading payment settings…"
+                              : paymentDirty
+                                ? "Unsaved changes"
+                                : "Saved to MongoDB"}
                         </span>
                         <button
                           className="primary"
                           disabled={
                             !paymentLoaded ||
                             paymentSaving ||
-                            (payment.upiId === savedPayment.upiId &&
-                              payment.qrCode === savedPayment.qrCode)
+                            qrReading ||
+                            !paymentDirty
                           }
                           onClick={() => void savePaymentSettings()}
                         >
-                          {paymentSaving ? "Saving…" : "Save UPI settings"}
+                          {paymentSaving ? "Saving…" : "Save Changes"}
                         </button>
                       </div>
                     </div>
@@ -885,6 +1013,18 @@ export default function BillingPage() {
           </main>
         </div>
       </div>
+      {qrPreview && (
+        <Modal title="QR Code Preview" onClose={closeQrPreview}>
+          <div className="qr-enlarged">
+            <img src={payment.qrCode} alt="Full payment QR code" />
+          </div>
+          <p className="qr-caption">
+            {payment.payeeName}
+            <br />
+            {payment.upiId}
+          </p>
+        </Modal>
+      )}
       {pendingBuyer !== null && (
         <Modal title="Buyer changed" onClose={() => setPendingBuyer(null)}>
           <p>
@@ -932,7 +1072,7 @@ export default function BillingPage() {
             <InvoicePreview
               invoice={invoice}
               seller={invoice.seller || seller}
-              payment={payment}
+              payment={savedPayment}
             />
           </div>
           <footer>
@@ -954,7 +1094,7 @@ export default function BillingPage() {
         <InvoicePreview
           invoice={invoice}
           seller={invoice.seller || seller}
-          payment={payment}
+          payment={savedPayment}
         />
       </div>
     </>
