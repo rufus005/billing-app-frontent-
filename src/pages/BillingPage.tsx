@@ -57,6 +57,7 @@ import { Modal } from "../components/Modal";
 import { PaymentQr } from "../components/PaymentQr";
 import { InvoicePreview } from "../components/InvoicePreview";
 import { readQrImage } from "../utils/paymentImage";
+import { invoiceFilename } from "../utils/invoicePresentation";
 import { generatePDF } from "../utils/pdfGenerator";
 export default function BillingPage() {
   const [seller, setSeller] = useState<Seller>(() =>
@@ -386,7 +387,7 @@ export default function BillingPage() {
         }, 120000);
         setNotice("Print preview opened. Select A4 paper and actual size.");
       } else {
-        doc.save(`${invoice.number.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf`);
+        doc.save(invoiceFilename(invoice));
         setNotice("A5 invoice PDF downloaded.");
       }
     } catch (e) {

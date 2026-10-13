@@ -193,8 +193,15 @@ try {
     .press("Enter");
   await expect(page.getByLabel("Item 1 price", { exact: true })).toBeVisible();
   await page.getByLabel("Item 1 quantity", { exact: true }).fill("2");
+  await page.getByLabel("Invoice date", { exact: true }).fill("2026-10-13");
+  await page.getByLabel("Invoice number", { exact: true }).fill("INV/2026/42");
   await nav("Save Draft");
   await nav("Preview");
+  const preview = page.getByRole("dialog").locator(".invoice-paper");
+  await expect(preview).toContainText("Buyer: Existing Buyer");
+  await expect(preview).toContainText("13/10/2026");
+  await expect(preview).not.toContainText("Special Discount");
+  await expect(preview).not.toContainText("Return Amount");
   await expect(
     page.getByRole("dialog").getByText("UPI ID: changed@bank"),
   ).toBeVisible();
@@ -208,7 +215,72 @@ try {
   await page.keyboard.press("Escape");
   const download = page.waitForEvent("download");
   await nav("Download PDF");
-  await (await download).saveAs("/tmp/billing-payment-a5.pdf");
+  const downloaded = await download;
+  assert.equal(
+    downloaded.suggestedFilename(),
+    "Invoice_Existing_Buyer_INV_2026_42_13-10-2026.pdf",
+  );
+  await downloaded.saveAs("/tmp/billing-payment-a5.pdf");
+  const pdfText = (path) =>
+    execFileSync("pdftotext", [path, "-"], { encoding: "utf8" });
+  const zeroText = pdfText("/tmp/billing-payment-a5.pdf");
+  for (const value of [
+    "Existing Buyer",
+    "INV/2026/42",
+    "13/10/2026",
+    "Bank Details",
+    "GSTIN",
+    "Grand Total",
+    "CGST",
+    "SGST",
+  ])
+    assert.ok(zeroText.includes(value), `Missing PDF detail: ${value}`);
+  assert.doesNotMatch(zeroText, /Special Discount|Return Amount/);
+  for (const [discount, returns] of [
+    [59, 0],
+    [0, 118],
+    [59, 118],
+  ]) {
+    await page
+      .getByLabel("Special discount", { exact: true })
+      .fill(String(discount));
+    await page
+      .getByLabel("Return amount", { exact: true })
+      .fill(String(returns));
+    const total = await page.locator(".grand-total strong").innerText();
+    await nav("Preview");
+    await expect(preview.locator(".invoice-sums")).toContainText(total);
+    assert.equal(
+      (await preview.innerText()).includes("Special Discount"),
+      discount !== 0,
+    );
+    assert.equal(
+      (await preview.innerText()).includes("Return Amount"),
+      returns !== 0,
+    );
+    await page.keyboard.press("Escape");
+    const next = page.waitForEvent("download");
+    await nav("Download PDF");
+    const path = `/tmp/billing-deductions-${discount}-${returns}.pdf`;
+    await (await next).saveAs(path);
+    const text = pdfText(path);
+    assert.equal(text.includes("Special Discount"), discount !== 0);
+    assert.equal(text.includes("Return Amount"), returns !== 0);
+    assert.ok(text.includes(total));
+    for (const label of [
+      "Taxable Amount",
+      "CGST",
+      "SGST",
+      "Total Tax",
+      "Bank Details",
+      "changed@bank",
+    ])
+      assert.ok(
+        text.includes(label),
+        `Missing ${label} after hiding deduction rows`,
+      );
+  }
+
   const info = execFileSync("pdfinfo", ["/tmp/billing-payment-a5.pdf"], {
     encoding: "utf8",
   });

@@ -6,6 +6,7 @@ import type {
 } from "../utils/invoiceTypes";
 import { calculate, money, round } from "../utils/calculations";
 import { amountToWords } from "../utils/amountToWords";
+import { formatInvoiceDate } from "../utils/invoicePresentation";
 import { declaration } from "../utils/pdfGenerator";
 export function InvoicePreview({
   invoice: i,
@@ -46,7 +47,7 @@ export function InvoicePreview({
             <td>
               Dated
               <br />
-              <strong>{i.date}</strong>
+              <strong>{formatInvoiceDate(i.date)}</strong>
             </td>
           </tr>
           <tr>
@@ -94,8 +95,8 @@ export function InvoicePreview({
               <td>{r.name}</td>
               <td>{r.hsn}</td>
               <td>{r.qty.toFixed(2)}</td>
-              <td>{r.price.toFixed(2)}</td>
-              <td>{round(r.qty * r.price).toFixed(2)}</td>
+              <td>{(r.finalPrice ?? r.price).toFixed(2)}</td>
+              <td>{round(r.qty * (r.finalPrice ?? r.price)).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -129,8 +130,10 @@ export function InvoicePreview({
           {[
             ["Total Qty", t.qty],
             ["Sale Amount", money(t.sale)],
-            ["Special Discount", money(i.discount)],
-            ["Return Amount", money(i.returns)],
+            ...(i.discount !== 0
+              ? [["Special Discount", money(i.discount)]]
+              : []),
+            ...(i.returns !== 0 ? [["Return Amount", money(i.returns)]] : []),
             ["Net Sale Amount", money(t.net)],
             ["Grand Total", money(t.grand)],
           ].map(([k, v]) => (

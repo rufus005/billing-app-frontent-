@@ -3,6 +3,7 @@ import autoTable, { type RowInput } from "jspdf-autotable";
 import type { BusinessPaymentSettings, Invoice, Seller } from "./invoiceTypes";
 import { calculate, money } from "./calculations";
 import { loadPaymentImage, containImage } from "./paymentImage";
+import { formatInvoiceDate } from "./invoicePresentation";
 import { amountToWords } from "./amountToWords";
 export const declaration =
   "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.";
@@ -71,7 +72,7 @@ export async function generatePDF(
             styles: { cellWidth: 80 },
           },
           { content: `Invoice No.\n${i.number}`, styles: { cellWidth: 27 } },
-          { content: `Dated\n${i.date}` },
+          { content: `Dated\n${formatInvoiceDate(i.date)}` },
         ],
         [
           {
@@ -137,12 +138,18 @@ export async function generatePDF(
     (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable
       .finalY + 2;
   const t = calculate(i);
+  const deductionRows: RowInput[] = [];
+  if (i.discount !== 0)
+    deductionRows.push([{ content: `Special Discount: ${money(i.discount)}` }]);
+  if (i.returns !== 0)
+    deductionRows.push([{ content: `Return Amount: ${money(i.returns)}` }]);
+  const summaryRowCount = 3 + deductionRows.length;
   // All final sections form one measured table, so AutoTable moves the entire block when needed.
   const body: RowInput[] = [
     [
       {
         content: `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}${payment.payeeName ? `\nPayee: ${payment.payeeName}` : ""}`,
-        rowSpan: 5,
+        rowSpan: summaryRowCount,
         styles: {
           cellWidth: 73,
           minCellHeight: qrImage ? 32 : 0,
@@ -157,8 +164,7 @@ export async function generatePDF(
       },
       { content: `Total Qty: ${t.qty}    Sale Amount: ${money(t.sale)}` },
     ],
-    [{ content: `Special Discount: ${money(i.discount)}` }],
-    [{ content: `Return Amount: ${money(i.returns)}` }],
+    ...deductionRows,
     [{ content: `Net Sale Amount: ${money(t.net)}` }],
     [
       {
@@ -225,7 +231,7 @@ export async function generatePDF(
           size.height,
         );
       }
-      if (data.row.index === 5 && data.section === "body") {
+      if (data.row.index === summaryRowCount && data.section === "body") {
         const width = data.cell.width / 4;
         const labels = [
           "Taxable Amount",
