@@ -1,6 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { createServer } from "vite";
 import { sampleProducts } from "../src/data/sampleProducts.ts";
+import { defaultSeller } from "../src/utils/invoiceTypes.ts";
 import fs from "node:fs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -200,6 +201,13 @@ try {
   const preview = page.getByRole("dialog").locator(".invoice-paper");
   await expect(preview).toContainText("Buyer: Existing Buyer");
   await expect(preview).toContainText("13/10/2026");
+  await expect(preview).toContainText("INV/2026/42");
+  for (const detail of Object.values(defaultSeller))
+    await expect(preview).toContainText(detail);
+  await expect(preview.locator(".invoice-lines")).toContainText(
+    "Double Decker 5 Doors Grey",
+  );
+  await expect(preview.locator(".invoice-sums")).toContainText("₹15,000.00");
   await expect(preview).not.toContainText("Special Discount");
   await expect(preview).not.toContainText("Return Amount");
   await expect(
@@ -233,6 +241,17 @@ try {
     "Grand Total",
     "CGST",
     "SGST",
+    defaultSeller.name,
+    defaultSeller.gstin,
+    defaultSeller.phone,
+    defaultSeller.bank,
+    defaultSeller.account,
+    defaultSeller.ifsc,
+    "Double Decker 5 Doors Grey",
+    "2.00",
+    "7500.00",
+    "15000.00",
+    "₹15,000.00",
   ])
     assert.ok(zeroText.includes(value), `Missing PDF detail: ${value}`);
   assert.doesNotMatch(zeroText, /Special Discount|Return Amount/);
@@ -312,6 +331,34 @@ try {
       encoding: "utf8",
     }),
     /changed@bank/,
+  );
+  const printText = pdfText("/tmp/billing-payment-a4.pdf");
+  for (const detail of [
+    "Existing Buyer",
+    "INV/2026/42",
+    "13/10/2026",
+    "Special Discount: ₹59.00",
+    "Return Amount: ₹118.00",
+    "Grand Total: ₹14,823.00",
+  ])
+    assert.ok(printText.includes(detail), `Missing print detail: ${detail}`);
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator(".app-shell")).toBeHidden();
+  await expect(page.locator(".print-only")).toBeVisible();
+  await expect(page.locator(".print-only")).toContainText("13/10/2026");
+  await expect(page.locator(".print-only")).toContainText(
+    "Buyer: Existing Buyer",
+  );
+  await page.emulateMedia({ media: "screen" });
+  await expect(
+    page.getByLabel("Special discount", { exact: true }),
+  ).toHaveValue("59");
+  await nav("Load Draft");
+  await expect(
+    page.getByLabel("Special discount", { exact: true }),
+  ).toHaveValue("0");
+  await expect(page.getByLabel("Return amount", { exact: true })).toHaveValue(
+    "0",
   );
   const multipage = await page.evaluate(
     async ({ payment }) => {
