@@ -13,7 +13,8 @@
     "server": "node server/server.js",
     "test:server": "tsx tests/server.mjs",
     "test:frontend": "tsx tests/payment-browser.mjs",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test:invoice": "node --import tsx tests/invoice-render.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",
@@ -24,6 +25,7 @@
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.468.0",
     "mongoose": "^9.10.2",
+    "pdfjs-dist": "^6.4.299",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -37,6 +39,7 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
     "eslint": "^10.12.0",
+    "jsqr": "^1.4.0",
     "mongodb-memory-server": "^11.3.0",
     "prettier": "^3.9.9",
     "supertest": "^7.3.0",

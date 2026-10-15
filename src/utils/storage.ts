@@ -33,7 +33,7 @@ export function createSale(invoice:Invoice,seller:Seller,status:SaleStatus=invoi
 export function updateSale(invoice:Invoice,seller:Seller,status:SaleStatus=invoice.status){return transact(l=>commitSale(l,invoice,seller,status))}
 export function cancelSavedSale(invoice:Invoice){return transact(l=>{const old=l.sales.find(s=>s.id===invoice.id);if(!old)throw Error('Sale not found.');return commitSale(l,invoice,old.seller||getBusiness(),'Cancelled')})}
 export function deleteSale(id:string,revision?:number){return transact(l=>{const old=l.sales.find(s=>s.id===id);if(!old)throw Error('Sale not found.');if(revision!==undefined&&old.revision!==revision)throw Error('This invoice has changed. Reload it before deleting.');l.products=updateCompletedSale(l.products,old,undefined,l.settings);l.sales=l.sales.filter(s=>s.id!==id);})}
-export async function duplicateSale(source:Invoice){const fresh=await allocateInvoice();return {...structuredClone(source),id:fresh.id,number:fresh.number,status:'Draft' as const,revision:0,createdAt:fresh.createdAt,updatedAt:fresh.updatedAt,totals:undefined};}
+export async function duplicateSale(source:Invoice){const fresh=await allocateInvoice();return {...structuredClone(source),id:fresh.id,number:fresh.number,status:'Draft' as const,receivedAmount:0,revision:0,createdAt:fresh.createdAt,updatedAt:fresh.updatedAt,totals:undefined};}
 export const getDraft=()=>read<Invoice|null>(keys.draft,null);
 export const saveDraft=(i:Invoice)=>write(keys.draft,i);
 export const clearDraft=()=>localStorage.removeItem(keys.draft);

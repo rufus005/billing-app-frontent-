@@ -136,6 +136,10 @@ export function InvoiceDetailsForm({
           </select>
         </label>
       )}
+      <p className="muted">
+        Enter the total confirmed receipts, including earlier payments. Saving
+        replaces this total; scanning a QR does not confirm payment.
+      </p>
       <Field
         label="Received amount"
         type="number"

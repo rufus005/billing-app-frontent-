@@ -84,10 +84,39 @@ try {
         },
       ]);
     if (path === "/api/buyer-prices") return reply([]);
-    if (path === "/api/invoices") return reply([
-      { ...newInvoice(), id: "sale-partial", number: "SALE-PARTIAL", status: "Completed", buyerId: "buyer", buyer: { name: "Existing Buyer", address: "", gstin: "", mobile: "1234567890" }, receivedAmount: 18, items: [{ id: "r", name: "Test", hsn: "", qty: 1, price: 118 }] },
-      { ...newInvoice(), id: "sale-unknown", number: "SALE-UNKNOWN", status: "Completed", buyerId: "buyer", buyer: { name: "Existing Buyer", address: "", gstin: "", mobile: "1234567890" }, receivedAmount: undefined, items: [{ id: "r", name: "Test", hsn: "", qty: 1, price: 118 }] }
-    ]);
+    if (path === "/api/invoices")
+      return reply([
+        {
+          ...newInvoice(),
+          id: "sale-partial",
+          number: "SALE-PARTIAL",
+          status: "Completed",
+          buyerId: "buyer",
+          buyer: {
+            name: "Existing Buyer",
+            address: "",
+            gstin: "",
+            mobile: "1234567890",
+          },
+          receivedAmount: 18,
+          items: [{ id: "r", name: "Test", hsn: "", qty: 1, price: 118 }],
+        },
+        {
+          ...newInvoice(),
+          id: "sale-unknown",
+          number: "SALE-UNKNOWN",
+          status: "Completed",
+          buyerId: "buyer",
+          buyer: {
+            name: "Existing Buyer",
+            address: "",
+            gstin: "",
+            mobile: "1234567890",
+          },
+          receivedAmount: undefined,
+          items: [{ id: "r", name: "Test", hsn: "", qty: 1, price: 118 }],
+        },
+      ]);
     throw new Error(`Unexpected API ${path}`);
   });
   await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}`, {
@@ -207,18 +236,12 @@ try {
   await expect(preview).toContainText("INV/2026/42");
   for (const detail of Object.values(defaultSeller))
     await expect(preview).toContainText(detail);
-  await expect(preview.locator(".invoice-lines")).toContainText(
-    "Double Decker 5 Doors Grey",
-  );
-  await expect(preview.locator(".invoice-sums")).toContainText("₹15,000.00");
+  await expect(preview).toContainText("Double Decker 5 Doors Grey");
+  await expect(preview).toContainText("₹15,000.00");
   await expect(preview).not.toContainText("Special Discount");
   await expect(preview).not.toContainText("Return Amount");
-  await expect(
-    page.getByRole("dialog").getByText("UPI ID: changed@bank"),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("dialog").getByAltText("Business UPI payment QR code"),
-  ).toHaveCSS("object-fit", "contain");
+  await expect(preview).toContainText("UPI ID: changed@bank");
+  await expect(preview.locator("canvas").first()).toBeVisible();
   await page.screenshot({
     path: "/tmp/billing-payment-preview.png",
     fullPage: true,
@@ -233,7 +256,10 @@ try {
   );
   await downloaded.saveAs("/tmp/billing-payment-a5.pdf");
   const pdfText = (path) =>
-    execFileSync("pdftotext", [path, "-"], { encoding: "utf8" }).replace(/\s+/g, " ");
+    execFileSync("pdftotext", [path, "-"], { encoding: "utf8" }).replace(
+      /\s+/g,
+      " ",
+    );
   const zeroText = pdfText("/tmp/billing-payment-a5.pdf");
   for (const value of [
     "Existing Buyer",
@@ -271,7 +297,7 @@ try {
       .fill(String(returns));
     const total = await page.locator(".grand-total strong").innerText();
     await nav("Preview");
-    await expect(preview.locator(".invoice-sums")).toContainText(total);
+    await expect(preview).toContainText(total);
     assert.equal(
       (await preview.innerText()).includes("Special Discount"),
       discount !== 0,
@@ -475,19 +501,17 @@ try {
       "Balance",
       "01/11/2026",
       "accounts@example.test",
-      "Authorised Signatory",
+      "AUTHORISED SIGNATORY",
     ])
       assert.ok(text.includes(label), `Missing ${label} in ${format}`);
     assert.ok(!text.includes("CGST"));
   }
   await nav("Business settings");
-  await page
-    .getByLabel("Upload logo", { exact: true })
-    .setInputFiles({
-      name: "logo.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(image.split(",")[1], "base64"),
-    });
+  await page.getByLabel("Upload logo", { exact: true }).setInputFiles({
+    name: "logo.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(image.split(",")[1], "base64"),
+  });
   await expect(page.getByAltText("Business logo preview")).toBeVisible();
   await page.getByLabel("Invoice QR mode").selectOption("dynamic");
   await nav("Create invoice");
@@ -500,12 +524,8 @@ try {
   await nav("Preview");
   await expect(preview).toContainText("Ship To");
   await expect(preview).toContainText("IGST");
-  await expect(
-    preview.getByAltText("Business logo", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    preview.getByAltText("Business UPI payment QR code"),
-  ).toHaveAttribute("src", /^data:image\/png/);
+  await expect(preview.locator("canvas").first()).toBeVisible();
+  await expect(preview).toContainText("Balance Amount");
   await page.keyboard.press("Escape");
   await page.getByLabel("Tax mode", { exact: true }).selectOption("non-gst");
   await nav("Preview");
@@ -530,7 +550,11 @@ try {
   await page.getByLabel("Payment status").selectOption("Partial");
   await expect(page.getByText("SALE-UNKNOWN", { exact: true })).toHaveCount(0);
   await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 invoice(s) with payment data unavailable", { exact: false })).toBeVisible();
+  await expect(
+    page.getByText("1 invoice(s) with payment data unavailable", {
+      exact: false,
+    }),
+  ).toBeVisible();
   await nav("Clear filters");
   await expect(page.getByText("SALE-UNKNOWN", { exact: true })).toBeVisible();
   await nav("Business settings");
@@ -542,8 +566,8 @@ try {
   await nav("Create invoice");
   await nav("Preview");
   await expect(
-    page.getByRole("dialog").getByAltText("Business UPI payment QR code"),
-  ).toHaveCount(0);
+    page.getByRole("dialog").locator(".invoice-preview"),
+  ).toHaveAttribute("aria-busy", "false");
   await page.keyboard.press("Escape");
   await nav("Business settings");
   await nav("Remove QR Code");

@@ -2095,3 +2095,20 @@ select {
 .invoice-lines th:nth-child(5) { width: 14%; }
 .invoice-lines th:nth-child(6) { width: 10%; }
 .invoice-lines th:nth-child(7) { width: 21%; }
+
+/* PDF pages are the single invoice layout, including browser printing. */
+.invoice-preview .invoice-paper {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.invoice-pdf-page { position: relative; margin: 0 auto 16px; background: white; box-shadow: 0 2px 9px #0002; }
+.invoice-pdf-page canvas { display: block; width: 100%; height: auto; }
+.invoice-accessible-text { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media print {
+  .invoice-pdf-page { margin: 0; box-shadow: none; break-after: page; max-width: 100%; }
+  .invoice-pdf-page:last-child { break-after: auto; }
+  .invoice-preview [role="status"] { display: none; }
+}

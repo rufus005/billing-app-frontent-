@@ -35,7 +35,15 @@ export async function invoiceQr(
   payment: BusinessPaymentSettings,
 ) {
   if (payment.showQrOnInvoices === false) return "";
-  if (payment.qrMode !== "dynamic") return payment.qrCode;
+  const dynamic =
+    payment.qrMode === "dynamic" ||
+    (payment.qrMode === undefined &&
+      !!payment.upiId.trim() &&
+      !!payment.payeeName?.trim());
+  if (!dynamic) return payment.qrCode;
+  // Historical receipts may be unknown. Never invent an amount or prevent
+  // printing the historical invoice simply because no amount QR is possible.
+  if (paymentSummary(invoice).balance === null) return "";
   const uri = upiPaymentUri(invoice, payment);
   return uri
     ? QRCode.toDataURL(uri, {

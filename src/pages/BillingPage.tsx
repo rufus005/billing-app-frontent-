@@ -1165,6 +1165,7 @@ export default function BillingPage() {
           )}
           <div className="preview-scroll">
             <InvoicePreview
+              format={paperSize}
               invoice={invoice}
               seller={invoice.seller || seller}
               payment={{ ...savedPayment, qrMode: seller.qrMode }}
@@ -1187,6 +1188,7 @@ export default function BillingPage() {
       )}
       <div className="print-only">
         <InvoicePreview
+          format={paperSize}
           invoice={invoice}
           seller={invoice.seller || seller}
           payment={{ ...savedPayment, qrMode: seller.qrMode }}

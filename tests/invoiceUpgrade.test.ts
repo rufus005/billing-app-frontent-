@@ -56,3 +56,32 @@ describe("invoice payments and GST presentation", () => {
     ).toEqual([]);
   });
 });
+
+it("keeps 18000 inclusive at 18000 and ignores saved tax rates in Non-GST mode", async () => {
+  const { calculate } = await import("../src/utils/calculations");
+  const i = {
+    ...invoice(),
+    items: [
+      {
+        id: "1",
+        name: "Product",
+        hsn: "1234",
+        qty: 1,
+        price: 18000,
+        gstPercent: 18,
+      },
+    ],
+    receivedAmount: 5000,
+  };
+  expect(calculate(i)).toMatchObject({
+    grand: 18000,
+    taxable: 15254.24,
+    tax: 2745.76,
+  });
+  expect(paymentSummary(i)).toMatchObject({ received: 5000, balance: 13000 });
+  expect(calculate({ ...i, taxMode: "non-gst" })).toMatchObject({
+    grand: 18000,
+    taxable: 18000,
+    tax: 0,
+  });
+});

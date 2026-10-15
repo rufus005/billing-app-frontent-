@@ -1,18 +1,31 @@
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
-import mongoose from "mongoose";
-import {createServer} from "vite";
-import {once} from "node:events";
-import {createServer as createSocketServer} from "node:net";
-import { createApp, initialize } from "../server/app.js";
-import { Product, Buyer, BuyerPrice } from "../server/models/index.js";
+import { createRequire } from "node:module";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+const backend = resolve(
+  process.env.BILLING_BACKEND_DIR || "../billin-app-server/server",
+);
+const mongoose = createRequire(pathToFileURL(backend + "/package.json"))(
+  "mongoose",
+);
+import { createServer } from "vite";
+import { once } from "node:events";
+import { createServer as createSocketServer } from "node:net";
+
 import { sampleProducts } from "../src/data/sampleProducts.ts";
 process.env.ADMIN_USERNAME = "browser-admin";
 process.env.ADMIN_PASSWORD = "browser-password";
 process.env.JWT_SECRET = "browser-test-secret";
-process.env.CLIENT_ORIGIN = "*";
+process.env.MONGO_URI = "";
+const { createApp, initialize } = await import(
+  pathToFileURL(backend + "/app.js").href
+);
+const { Product, Buyer, BuyerPrice } = await import(
+  pathToFileURL(backend + "/models/index.js").href
+);
 const db = await MongoMemoryReplSet.create({
   replSet: { count: 1 },
   binary: { downloadDir: "/tmp/billing-mongodb" },
@@ -30,13 +43,21 @@ await BuyerPrice.create({
   product: "product-0",
   price: 7200,
 });
-const server = createApp().listen(0,'127.0.0.1');
-await once(server,'listening');
-const apiUrl=`http://127.0.0.1:${server.address().port}`;
-const probe=createSocketServer().listen(0,'127.0.0.1');await once(probe,'listening');const testPort=probe.address().port;await new Promise(r=>probe.close(r));
-const vite=await createServer({server:{port:testPort,host:'127.0.0.1',strictPort:true},define:{'import.meta.env.VITE_API_URL':JSON.stringify(apiUrl)}});
+const probe = createSocketServer().listen(0, "127.0.0.1");
+await once(probe, "listening");
+const testPort = probe.address().port;
+await new Promise((r) => probe.close(r));
+process.env.CLIENT_URL = `http://127.0.0.1:${testPort}`;
+const server = createApp().listen(0, "127.0.0.1");
+await once(server, "listening");
+const apiUrl = `http://127.0.0.1:${server.address().port}`;
+
+const vite = await createServer({
+  server: { port: testPort, host: "127.0.0.1", strictPort: true },
+  define: { "import.meta.env.VITE_API_URL": JSON.stringify(apiUrl) },
+});
 await vite.listen();
-const browserUrl=`http://127.0.0.1:${vite.httpServer.address().port}`;
+const browserUrl = `http://127.0.0.1:${vite.httpServer.address().port}`;
 let browser;
 try {
   browser = await chromium.launch({
@@ -49,14 +70,22 @@ try {
     acceptDownloads: true,
   });
   const errors = [];
-  page.on("requestfailed",r=>console.error("Request failed:",r.url(),r.failure()));
-  page.on("console",m=>{if(m.type()==="error")console.error(m.text())});
+  page.on("requestfailed", (r) =>
+    console.error("Request failed:", r.url(), r.failure()),
+  );
+  page.on("console", (m) => {
+    if (m.type() === "error") console.error(m.text());
+  });
   page.on("pageerror", (e) => {
     errors.push(e.message);
     console.error(e.message);
   });
   page.on("dialog", (d) => d.accept());
-  await page.goto(browserUrl);
+  page.setDefaultTimeout(60000);
+  await page.goto(browserUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: 120000,
+  });
   await page.getByLabel("Username", { exact: true }).fill("browser-admin");
   await page.getByLabel("Password", { exact: true }).fill("browser-password");
   await page.getByRole("button", { name: "Log in", exact: true }).click();
@@ -105,6 +134,7 @@ try {
       document.querySelector('[aria-label="Item 1 price"]')?.value === "7200",
   );
   await page.getByLabel("Item 1 price", { exact: true }).fill("7100");
+  await page.getByLabel("Received amount", { exact: true }).fill("2000");
   await page
     .getByRole("button", { name: "Complete Sale", exact: true })
     .click();
@@ -113,6 +143,8 @@ try {
     .collection("invoices")
     .findOne({ buyerId: "jp" });
   assert.equal(saved.items[0].finalPrice, 7100);
+  assert.equal(saved.receivedAmount, 2000);
+  await page.reload({ waitUntil: "domcontentloaded" });
   assert.equal((await BuyerPrice.findOne({ id: "jp-rate" })).price, 7200);
   await BuyerPrice.updateOne({ id: "jp-rate" }, { $set: { price: 7300 } });
   await page.getByRole("button", { name: "Sales", exact: true }).click();
@@ -122,9 +154,9 @@ try {
     "7100",
   );
   await page.getByRole("button", { name: "Preview", exact: true }).click();
-  assert.match(
-    await page.locator(".modal .invoice-lines").innerText(),
-    /7100.00/,
+  await expect(page.locator(".modal .invoice-paper")).toContainText("7100.00");
+  await expect(page.locator(".modal .invoice-paper")).toContainText(
+    "₹5,100.00",
   );
   await page.getByRole("button", { name: "Close dialog" }).click();
   const snapshotDownload = page.waitForEvent("download");

@@ -68,20 +68,27 @@ export function BusinessAssets({
       <label className="field">
         Invoice QR mode
         <select
-          value={seller.qrMode || "static"}
+          value={seller.qrMode || "auto"}
           onChange={(e) =>
             onChange({
               ...seller,
-              qrMode: e.target.value as "static" | "dynamic",
+              qrMode:
+                e.target.value === "auto"
+                  ? undefined
+                  : (e.target.value as "static" | "dynamic"),
             })
           }
         >
+          <option value="auto">
+            Automatic — amount QR when UPI details are saved
+          </option>
           <option value="static">Uploaded Static QR</option>
           <option value="dynamic">Dynamic Amount QR</option>
         </select>
       </label>
       <p>
-        Dynamic QR uses the recorded balance. Scanning never records a payment.
+        Dynamic QR uses the confirmed outstanding balance. Static QR images may
+        not contain an amount. Scanning never records or confirms a payment.
       </p>
     </section>
   );
