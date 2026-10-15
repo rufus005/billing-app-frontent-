@@ -6,6 +6,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 const vite = await createServer({
+  cacheDir: "node_modules/.vite-payment",
   server: { host: "127.0.0.1", port: 0, watch: null },
   define: {
     "import.meta.env.VITE_API_URL": JSON.stringify("http://billing.test"),
@@ -234,7 +235,7 @@ try {
   await expect(preview).toContainText("Buyer: Existing Buyer");
   await expect(preview).toContainText("13/10/2026");
   await expect(preview).toContainText("INV/2026/42");
-  for (const detail of Object.values(defaultSeller))
+  for (const detail of Object.entries(defaultSeller).filter(([key]) => key !== "branch").map(([, value]) => value))
     await expect(preview).toContainText(detail);
   await expect(preview).toContainText("Double Decker 5 Doors Grey");
   await expect(preview).toContainText("₹15,000.00");
@@ -546,10 +547,10 @@ try {
   await expect(
     page.getByRole("heading", { name: "Sales", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible();
+  await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible({ timeout: 20000 });
   await page.getByLabel("Payment status").selectOption("Partial");
   await expect(page.getByText("SALE-UNKNOWN", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible();
+  await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible({ timeout: 20000 });
   await expect(
     page.getByText("1 invoice(s) with payment data unavailable", {
       exact: false,

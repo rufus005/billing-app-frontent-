@@ -2112,3 +2112,18 @@ select {
   .invoice-pdf-page:last-child { break-after: auto; }
   .invoice-preview [role="status"] { display: none; }
 }
+
+.buyer-details-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px 20px; max-width: 780px; margin: 22px 0; }
+.buyer-details-grid label { display: flex; flex-direction: column; gap: 8px; font-size: 14px; font-weight: 600; color: #27364a; min-width: 0; }
+.buyer-details-grid input, .buyer-details-grid textarea { width: 100%; min-height: 44px; padding: 11px 13px; font-size: 15px; line-height: 1.5; border: 1px solid #cbd5e1; border-radius: 9px; font-weight: 400; }
+.buyer-details-grid textarea { resize: vertical; }
+.buyer-wide { grid-column: 1 / -1; }
+.buyer-pin-status { font-size: 13px; color: #526278; margin: -6px 0 0; }
+.buyer-extra-fields { max-width: 780px; margin-bottom: 20px; }
+@media (max-width: 540px) { .buyer-details-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
+.buyer-editor { padding: 20px; }
+.buyer-editor .field { font-size: 14px; color: #27364a; }
+.buyer-editor .buyer-active { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.buyer-editor .buyer-active input { width: 18px; height: 18px; min-height: 0; margin: 0; }
+.buyer-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+@media (max-width: 540px) { .buyer-editor { padding: 16px; } }

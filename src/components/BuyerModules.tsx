@@ -1,3 +1,4 @@
+import { BuyerDetailsFields } from "./BuyerDetailsFields";
 import { useState } from "react";
 import type { BuyerRecord, BuyerPrice, Product } from "../utils/invoiceTypes";
 import { buyerApi, buyerPriceApi } from "../services/api";
@@ -81,6 +82,7 @@ export function BuyerManager({
       <section className="card">
         {edit ? (
           <form
+            className="buyer-editor"
             onSubmit={async (e) => {
               e.preventDefault();
               setBusy(true);
@@ -98,25 +100,23 @@ export function BuyerManager({
               }
             }}
           >
-            <div className="form-grid">
+            <h2>Buyer Details</h2>
+            <BuyerDetailsFields key={edit.id} buyer={edit} onChange={setEdit} />
+            <div className="form-grid buyer-extra-fields">
               {(
                 [
-                  "name",
-                  "mobile",
-                  "address",
-                  "gstin",
                   "email",
                   "notes",
                 ] as const
               ).map((k) => (
                 <Field
                   key={k}
-                  label={k === "name" ? "Buyer Name" : k}
+                  label={k === "email" ? "Email (optional)" : "Notes (optional)"}
                   value={edit[k]}
                   onChange={(v) => setEdit({ ...edit, [k]: v })}
                 />
               ))}
-              <label>
+              <label className="buyer-active">
                 <input
                   type="checkbox"
                   checked={edit.active}
@@ -127,12 +127,10 @@ export function BuyerManager({
                 Active
               </label>
             </div>
-            <button type="button" onClick={() => setEdit(null)}>
-              Cancel
-            </button>
-            <button className="primary" disabled={busy}>
-              Save Buyer
-            </button>
+            <div className="buyer-actions">
+              <button type="button" onClick={() => setEdit(null)}>Cancel</button>
+              <button className="primary" disabled={busy}>Save Buyer</button>
+            </div>
           </form>
         ) : (
           <>

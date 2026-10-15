@@ -6,6 +6,8 @@ import { execFileSync } from "node:child_process";
 const out = process.env.INVOICE_ARTIFACTS || "/tmp/billing-invoice-review";
 fs.mkdirSync(out, { recursive: true });
 const vite = await createServer({
+  cacheDir: "node_modules/.vite-render",
+  optimizeDeps: { include: ["react", "react-dom/client", "pdfjs-dist", "jsqr"] },
   plugins: [
     {
       name: "invoice-test-fixture",
@@ -14,11 +16,11 @@ const vite = await createServer({
       },
       load(id) {
         if (id === "/invoice-fixture")
-          return 'export * as React from "react"; export {createRoot} from "react-dom/client"; export * as pdfjs from "pdfjs-dist"; export {default as jsQR} from "jsqr";';
+          return 'export {default as React} from "react"; export {createRoot} from "react-dom/client"; export * as pdfjs from "pdfjs-dist"; export {default as jsQR} from "jsqr";';
       },
     },
   ],
-  server: { host: "127.0.0.1", port: 0, watch: null },
+  server: { hmr: false, host: "127.0.0.1", port: 0, watch: null },
 });
 await vite.listen();
 let browser;
@@ -33,6 +35,7 @@ try {
   });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.route(`http://127.0.0.1:${vite.httpServer.address().port}/`, route => route.fulfill({ contentType: "text/html", body: '<!doctype html><html><head><link rel="stylesheet" href="/src/styles.css"></head><body></body></html>' }));
   await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}`, {
     waitUntil: "domcontentloaded",
     timeout: 120000,

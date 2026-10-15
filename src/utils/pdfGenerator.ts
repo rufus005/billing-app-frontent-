@@ -214,8 +214,8 @@ export async function generatePDF(
     ],
     ["Balance Amount", p.balance === null ? "Not recorded" : money(p.balance)],
   ];
-  const bankText = `Bank Details\n${s.bank} – ${s.branch}\nAccount No.: ${s.account}\nIFSC: ${s.ifsc}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}${payment.payeeName ? `\nPayee: ${payment.payeeName}` : ""}`;
-  const bankWidth = width * 0.48;
+  const bankText = `Bank Details\nBank Name: ${s.bank}\nAccount Number: ${s.account}\nIFSC: ${s.ifsc}${payment.payeeName ? `\nUPI Payee Name: ${payment.payeeName}` : ""}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}`;
+  const bankWidth = width * 0.48 - 2;
   doc.setFontSize(styles.fontSize);
   const bankLines = doc.splitTextToSize(bankText, bankWidth - 4).length;
   const bankHeight =
@@ -235,6 +235,7 @@ export async function generatePDF(
             },
           ]
         : []),
+      ...(index === 0 ? [{ content: "", rowSpan: sums.length, styles: { cellWidth: 2, lineWidth: 0, fillColor: 255 } }] : []),
       {
         content: label + ":",
         styles: { fontStyle: index >= sums.length - 3 ? "bold" : "normal" },
@@ -251,14 +252,15 @@ export async function generatePDF(
       pageBreak: "avoid",
       columnStyles: {
         0: { cellWidth: bankWidth },
-        1: { cellWidth: width * 0.28 },
-        2: { cellWidth: width * 0.24 },
+        1: { cellWidth: 2 },
+        2: { cellWidth: width * 0.28 },
+        3: { cellWidth: width * 0.24 },
       },
       didDrawCell: (data) => {
         if (data.column.index === 0 && data.row.index === 0)
           drawImage(
             1,
-            data.cell.x + 2,
+            data.cell.x + (data.cell.width - 31) / 2,
             data.cell.y + data.cell.height - 33,
             31,
           );
@@ -300,7 +302,7 @@ export async function generatePDF(
           doc.addImage(
             canvas.toDataURL("image/png"),
             "PNG",
-            x + w - imageWidth - 3,
+            x + (w - imageWidth) / 2,
             top + 2,
             imageWidth,
             imageHeight,
@@ -308,10 +310,10 @@ export async function generatePDF(
         }
         doc.setFont("Invoice", "bold");
         doc.setFontSize(format === "a4" ? 8 : 6.5);
-        const caption = doc.splitTextToSize(
-          "AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARKETING",
-          w - 6,
-        );
+        const company = "DYNAMIC UNIVERSAL MARKETING";
+        const captionSize = Math.min(format === "a4" ? 8 : 7, (w - 6) / doc.getTextWidth(company) * doc.getFontSize());
+        doc.setFontSize(captionSize);
+        const caption = ["AUTHORISED SIGNATORY FOR", company];
         doc.text(caption, x + w / 2, top + 21, { align: "center" });
       },
     },
