@@ -1,7 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { createServer } from "vite";
 import { sampleProducts } from "../src/data/sampleProducts.ts";
-import { defaultSeller } from "../src/utils/invoiceTypes.ts";
+import { defaultSeller, newInvoice } from "../src/utils/invoiceTypes.ts";
 import fs from "node:fs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -83,8 +83,11 @@ try {
           active: true,
         },
       ]);
-    if (path === "/api/buyer-prices" || path === "/api/invoices")
-      return reply([]);
+    if (path === "/api/buyer-prices") return reply([]);
+    if (path === "/api/invoices") return reply([
+      { ...newInvoice(), id: "sale-partial", number: "SALE-PARTIAL", status: "Completed", buyerId: "buyer", buyer: { name: "Existing Buyer", address: "", gstin: "", mobile: "1234567890" }, receivedAmount: 18, items: [{ id: "r", name: "Test", hsn: "", qty: 1, price: 118 }] },
+      { ...newInvoice(), id: "sale-unknown", number: "SALE-UNKNOWN", status: "Completed", buyerId: "buyer", buyer: { name: "Existing Buyer", address: "", gstin: "", mobile: "1234567890" }, receivedAmount: undefined, items: [{ id: "r", name: "Test", hsn: "", qty: 1, price: 118 }] }
+    ]);
     throw new Error(`Unexpected API ${path}`);
   });
   await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}`, {
@@ -230,7 +233,7 @@ try {
   );
   await downloaded.saveAs("/tmp/billing-payment-a5.pdf");
   const pdfText = (path) =>
-    execFileSync("pdftotext", [path, "-"], { encoding: "utf8" });
+    execFileSync("pdftotext", [path, "-"], { encoding: "utf8" }).replace(/\s+/g, " ");
   const zeroText = pdfText("/tmp/billing-payment-a5.pdf");
   for (const value of [
     "Existing Buyer",
@@ -310,6 +313,7 @@ try {
     }),
     /changed@bank/,
   );
+  await page.getByLabel("PDF / print paper size").selectOption("a4");
   await nav("Print");
   await expect(page.locator("iframe.print-frame")).toHaveCount(1);
   const a4 = await page.evaluate(async () => {
@@ -394,6 +398,124 @@ try {
     }),
     /Product 99/,
   );
+  // Extended invoice layout: long addresses, mixed tax, branding and both paper sizes.
+  for (const format of ["a4", "a5"]) {
+    const result = await page.evaluate(
+      async ({ payment, image, format }) => {
+        const { generatePDF } = await import("/src/utils/pdfGenerator.ts");
+        const { newInvoice, defaultSeller } =
+          await import("/src/utils/invoiceTypes.ts");
+        const { invoiceQr, upiPaymentUri } =
+          await import("/src/utils/paymentQr.ts");
+        const i = {
+          ...newInvoice(),
+          number: "LONG-42",
+          dueDate: "2026-11-01",
+          receivedAmount: 100,
+          taxJurisdiction: "inter",
+          buyer: {
+            name: "Long Address Buyer",
+            address:
+              "Floor 7, Block B, Industrial Estate, Near Central Market, Bengaluru, Karnataka 560062. ".repeat(
+                4,
+              ),
+            mobile: "1234567890",
+            gstin: "",
+          },
+        };
+        i.shipTo = {
+          ...i.buyer,
+          name: "Shipping Warehouse",
+          address: "Warehouse 42, Delivery Road. ".repeat(8),
+        };
+        i.items = Array.from({ length: 75 }, (_, n) => ({
+          id: String(n),
+          name: "Detailed Product " + n + " with long description and variant",
+          hsn: "1234",
+          qty: 1,
+          price: 118,
+          gstPercent: n % 2 ? 5 : 18,
+        }));
+        const settings = { ...payment, qrMode: "dynamic" };
+        const qr = await invoiceQr(i, settings);
+        const uri = upiPaymentUri(i, settings);
+        const doc = await generatePDF(
+          i,
+          {
+            ...defaultSeller,
+            email: "accounts@example.test",
+            logo: image,
+            seal: image,
+            signature: image,
+          },
+          settings,
+          format,
+        );
+        return {
+          pdf: Array.from(new Uint8Array(doc.output("arraybuffer"))),
+          qr,
+          uri,
+          received: i.receivedAmount,
+        };
+      },
+      { payment, image, format },
+    );
+    assert.equal(new URL(result.uri).searchParams.get("am"), "8750.00");
+    assert.equal(result.received, 100);
+    assert.match(result.qr, /^data:image\/png;base64,/);
+    const path = `/tmp/billing-upgrade-${format}.pdf`;
+    fs.writeFileSync(path, Buffer.from(result.pdf));
+    const text = pdfText(path);
+    for (const label of [
+      "Shipping Warehouse",
+      "Long Address Buyer",
+      "Detailed Product 74",
+      "IGST",
+      "Received",
+      "Balance",
+      "01/11/2026",
+      "accounts@example.test",
+      "Authorised Signatory",
+    ])
+      assert.ok(text.includes(label), `Missing ${label} in ${format}`);
+    assert.ok(!text.includes("CGST"));
+  }
+  await nav("Business settings");
+  await page
+    .getByLabel("Upload logo", { exact: true })
+    .setInputFiles({
+      name: "logo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(image.split(",")[1], "base64"),
+    });
+  await expect(page.getByAltText("Business logo preview")).toBeVisible();
+  await page.getByLabel("Invoice QR mode").selectOption("dynamic");
+  await nav("Create invoice");
+  await page.getByLabel("Received amount", { exact: true }).fill("100");
+  await page.getByLabel("Due date", { exact: true }).fill("2026-11-01");
+  await page
+    .getByLabel("Shipping address", { exact: true })
+    .selectOption("separate");
+  await page.getByLabel("Supply type").selectOption("inter");
+  await nav("Preview");
+  await expect(preview).toContainText("Ship To");
+  await expect(preview).toContainText("IGST");
+  await expect(
+    preview.getByAltText("Business logo", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    preview.getByAltText("Business UPI payment QR code"),
+  ).toHaveAttribute("src", /^data:image\/png/);
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Tax mode", { exact: true }).selectOption("non-gst");
+  await nav("Preview");
+  await expect(preview).toContainText("NON-GST");
+  await expect(preview).not.toContainText("IGST");
+  await page.keyboard.press("Escape");
+  await nav("Business settings");
+  await page.getByLabel("Invoice QR mode").selectOption("static");
+  await nav("Remove logo");
+  await expect(page.getByAltText("Business logo preview")).toHaveCount(0);
   await nav("Products");
   await expect(
     page.getByRole("heading", { name: "Product catalogue", exact: true }),
@@ -404,6 +526,13 @@ try {
   await expect(
     page.getByRole("heading", { name: "Sales", exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible();
+  await page.getByLabel("Payment status").selectOption("Partial");
+  await expect(page.getByText("SALE-UNKNOWN", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("SALE-PARTIAL", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 invoice(s) with payment data unavailable", { exact: false })).toBeVisible();
+  await nav("Clear filters");
+  await expect(page.getByText("SALE-UNKNOWN", { exact: true })).toBeVisible();
   await nav("Business settings");
   await page.getByRole("switch").uncheck();
   await nav("Save Changes");

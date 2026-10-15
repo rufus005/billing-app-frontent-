@@ -1,3 +1,4 @@
+import { paymentSummary, taxRows } from "../utils/invoicePresentation";
 import { Info } from "lucide-react";
 import type { Invoice } from "../utils/invoiceTypes";
 import { calculate, money, numeric } from "../utils/calculations";
@@ -51,6 +52,7 @@ export function TotalsPanel({
         <span>GST breakdown</span>
         <label>
           <input
+            disabled={i.taxMode === "non-gst"}
             aria-label="GST rate"
             type="number"
             min="0"
@@ -68,30 +70,12 @@ export function TotalsPanel({
         <span>Taxable amount</span>
         <span>{money(t.taxable)}</span>
       </div>
-      <div className="total-line muted">
-        <span>
-          CGST (
-          {i.items.some(
-            (r) => r.gstPercent !== undefined && r.gstPercent !== i.gst,
-          )
-            ? "mixed"
-            : i.gst / 2 + "%"}
-          )
-        </span>
-        <span>{money(t.cgst)}</span>
-      </div>
-      <div className="total-line muted">
-        <span>
-          SGST (
-          {i.items.some(
-            (r) => r.gstPercent !== undefined && r.gstPercent !== i.gst,
-          )
-            ? "mixed"
-            : i.gst / 2 + "%"}
-          )
-        </span>
-        <span>{money(t.sgst)}</span>
-      </div>
+      {taxRows(i).map(([label, value]) => (
+        <div className="total-line muted" key={label}>
+          <span>{label}</span>
+          <span>{money(value)}</span>
+        </div>
+      ))}
       <div className="total-line">
         <span>Total tax</span>
         <span>{money(t.tax)}</span>
@@ -103,10 +87,22 @@ export function TotalsPanel({
         </div>
         <strong>{money(t.grand)}</strong>
       </div>
+      <div className="total-line">
+        <span>Balance</span>
+        <strong>
+          {paymentSummary(i).balance === null
+            ? "Received amount not recorded"
+            : money(paymentSummary(i).balance!)}
+        </strong>
+      </div>
       <p className="amount-words">{amountToWords(t.grand)}</p>
       <div className="note">
         <Info size={15} />
-        <span>GST is included in your item prices.</span>
+        <span>
+          {i.taxMode === "non-gst"
+            ? "Non-GST invoice"
+            : "GST is included in your item prices."}
+        </span>
       </div>
     </section>
   );

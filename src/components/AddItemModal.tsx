@@ -156,7 +156,14 @@ export function AddItemModal({
                       </small>
                     </td>
                     <td>{p.code}</td>
-                    <td>{p.stock} PCS</td>
+                    <td>
+                      {p.stock} PCS
+                      {p.stock <= 5 && (
+                        <small className="stock-warning">
+                          {p.stock <= 0 ? "Out of stock" : "Low stock (≤ 5)"}
+                        </small>
+                      )}
+                    </td>
                     <td>{money(p.price)}</td>
                     <td>
                       {selected[p.id] > 0 ? (

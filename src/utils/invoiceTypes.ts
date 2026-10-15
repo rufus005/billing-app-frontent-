@@ -1,4 +1,9 @@
 export interface Seller {
+  email?: string;
+  logo?: string;
+  signature?: string;
+  seal?: string;
+  qrMode?: "dynamic" | "static";
   name: string;
   address: string;
   gstin: string;
@@ -9,6 +14,7 @@ export interface Seller {
   ifsc: string;
 }
 export interface BusinessPaymentSettings {
+  qrMode?: "dynamic" | "static";
   upiId: string;
   payeeName?: string;
   showQrOnInvoices?: boolean;
@@ -79,6 +85,11 @@ export interface LineItem {
 }
 export type SaleStatus = "Draft" | "Completed" | "Cancelled";
 export interface Invoice {
+  dueDate?: string;
+  shipTo?: Buyer;
+  taxMode?: "gst" | "non-gst";
+  taxJurisdiction?: "intra" | "inter";
+  receivedAmount?: number;
   buyerId?: string;
   id: string;
   status: SaleStatus;
@@ -158,6 +169,7 @@ export function newInvoice(
     time: d.toTimeString().slice(0, 8),
     mode: settings.defaultMode,
     vehicle: "",
+    receivedAmount: 0,
     buyer: { name: "", address: "", gstin: "", mobile: "" },
     items: [],
     discount: 0,

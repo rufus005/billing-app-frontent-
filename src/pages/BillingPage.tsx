@@ -1,3 +1,4 @@
+import { BusinessAssets } from "../components/BusinessAssets";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ReceiptText,
@@ -63,6 +64,7 @@ export default function BillingPage() {
   const [seller, setSeller] = useState<Seller>(() =>
     read(keys.seller, defaultSeller),
   );
+  const [paperSize, setPaperSize] = useState<"a4" | "a5">("a5");
   const [products, setProducts] = useState<Product[]>(() => []);
   const [invoice, setInvoice] = useState<Invoice>(() =>
     read(keys.working, newInvoice()),
@@ -137,6 +139,30 @@ export default function BillingPage() {
         },
         invoice.revision > 0,
       );
+      const fields = [
+        "dueDate",
+        "shipTo",
+        "taxMode",
+        "taxJurisdiction",
+        "receivedAmount",
+      ] as const;
+      const missing = fields.filter(
+        (key) =>
+          invoice[key] !== undefined &&
+          JSON.stringify(saved[key]) !== JSON.stringify(invoice[key]),
+      );
+      if (missing.length) {
+        setInvoice({
+          ...invoice,
+          ...saved,
+          ...Object.fromEntries(missing.map((key) => [key, invoice[key]])),
+        });
+        await reload();
+        setNotice(
+          `Invoice saved, but backend did not preserve: ${missing.join(", ")}. Local edits retained; backend update required.`,
+        );
+        return;
+      }
       setInvoice(saved);
       await reload();
       setNotice("Invoice saved to MongoDB.");
@@ -324,7 +350,10 @@ export default function BillingPage() {
               old.buyerId,
               latest,
             ),
-            gstPercent: selection.product.gstPercent ?? old.gst,
+            gstPercent:
+              old.taxMode === "non-gst"
+                ? 0
+                : (selection.product.gstPercent ?? old.gst),
           })),
         ],
       }));
@@ -366,8 +395,8 @@ export default function BillingPage() {
       const doc = await generatePDF(
         invoice,
         invoice.seller || seller,
-        confirmedPayment,
-        print ? "a4" : "a5",
+        { ...confirmedPayment, qrMode: seller.qrMode },
+        paperSize,
       );
       if (print) {
         const url = doc.output("bloburl");
@@ -385,10 +414,12 @@ export default function BillingPage() {
           frame.remove();
           URL.revokeObjectURL(String(url));
         }, 120000);
-        setNotice("Print preview opened. Select A4 paper and actual size.");
+        setNotice(
+          "Print preview opened. Select the chosen paper size and actual size.",
+        );
       } else {
         doc.save(invoiceFilename(invoice));
-        setNotice("A5 invoice PDF downloaded.");
+        setNotice(`${paperSize.toUpperCase()} invoice PDF downloaded.`);
       }
     } catch (e) {
       setNotice(
@@ -585,6 +616,18 @@ export default function BillingPage() {
                           <h2>Invoice details</h2>
                         </div>
                       </div>
+                      <label className="field">
+                        PDF / print paper size
+                        <select
+                          value={paperSize}
+                          onChange={(e) =>
+                            setPaperSize(e.target.value as "a4" | "a5")
+                          }
+                        >
+                          <option value="a5">A5</option>
+                          <option value="a4">A4</option>
+                        </select>
+                      </label>
                       <InvoiceDetailsForm
                         invoice={invoice}
                         onChange={setInvoice}
@@ -876,6 +919,7 @@ export default function BillingPage() {
                   </div>
                   <SellerForm seller={seller} onChange={setSeller} />
                 </section>
+                <BusinessAssets seller={seller} onChange={setSeller} />
                 <section className="card payment-settings">
                   <div className="section-title">
                     <h2>UPI &amp; QR Payment Settings</h2>
@@ -1104,7 +1148,11 @@ export default function BillingPage() {
         />
       )}
       {preview && (
-        <Modal title="Invoice preview · A5" onClose={closePreview} wide>
+        <Modal
+          title={`Invoice preview · ${paperSize.toUpperCase()}`}
+          onClose={closePreview}
+          wide
+        >
           {!paymentLoaded && (
             <p className="payment-feedback error" role="alert">
               {paymentError || "Loading payment settings…"}
@@ -1119,7 +1167,7 @@ export default function BillingPage() {
             <InvoicePreview
               invoice={invoice}
               seller={invoice.seller || seller}
-              payment={savedPayment}
+              payment={{ ...savedPayment, qrMode: seller.qrMode }}
             />
           </div>
           <footer>
@@ -1141,7 +1189,7 @@ export default function BillingPage() {
         <InvoicePreview
           invoice={invoice}
           seller={invoice.seller || seller}
-          payment={savedPayment}
+          payment={{ ...savedPayment, qrMode: seller.qrMode }}
         />
       </div>
     </>

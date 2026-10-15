@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { invoiceQr } from "../utils/paymentQr";
+import { paymentSummary, taxRows } from "../utils/invoicePresentation";
 import { PaymentQr } from "./PaymentQr";
 import type {
   BusinessPaymentSettings,
@@ -18,6 +21,24 @@ export function InvoicePreview({
   payment?: BusinessPaymentSettings;
 }) {
   const t = calculate(i);
+  const p = paymentSummary(i);
+  const [qr, setQr] = useState({ key: "", source: "", error: "" });
+  const qrKey = JSON.stringify([i.id, i.number, i.status, p.balance, payment]);
+  useEffect(() => {
+    let active = true;
+    invoiceQr(i, payment)
+      .then((source) => {
+        if (active) setQr({ key: qrKey, source, error: "" });
+      })
+      .catch((e) => {
+        if (active) setQr({ key: qrKey, source: "", error: e.message });
+      });
+    return () => {
+      active = false;
+    };
+  }, [qrKey]);
+  const shipping = i.shipTo || i.buyer;
+
   return (
     <div className="invoice-paper">
       <table className="invoice-header">
@@ -28,16 +49,29 @@ export function InvoicePreview({
         </colgroup>
         <tbody>
           <tr>
-            <th colSpan={2}>SALES INVOICE</th>
+            <th colSpan={2}>
+              {i.taxMode === "non-gst"
+                ? "SALES INVOICE · NON-GST"
+                : "SALES INVOICE"}
+            </th>
             <td>{i.time}</td>
           </tr>
           <tr>
             <td className="seller-cell">
+              {s.logo && (
+                <img
+                  className="invoice-logo"
+                  src={s.logo}
+                  alt="Business logo"
+                />
+              )}
               <strong>{s.name}</strong>
               <p>{s.address}</p>
               <p>
-                GSTIN: {s.gstin} &nbsp; Ph: {s.phone}
+                {i.taxMode !== "non-gst" && <>GSTIN: {s.gstin} &nbsp;</>} Ph:{" "}
+                {s.phone}
               </p>
+              {s.email && <p>{s.email}</p>}
             </td>
             <td>
               Invoice No.
@@ -48,11 +82,12 @@ export function InvoicePreview({
               Dated
               <br />
               <strong>{formatInvoiceDate(i.date)}</strong>
+              {i.dueDate && <p>Due: {formatInvoiceDate(i.dueDate)}</p>}
             </td>
           </tr>
           <tr>
             <td>
-              <strong>Buyer: {i.buyer.name || "—"}</strong>
+              <strong>Bill To · Buyer: {i.buyer.name || "—"}</strong>
               <p>{i.buyer.address || "—"}</p>
               <p>
                 GSTIN: {i.buyer.gstin || "—"}
@@ -60,15 +95,13 @@ export function InvoicePreview({
                 Mobile: {i.buyer.mobile || "—"}
               </p>
             </td>
-            <td>
-              Invoice Mode
-              <br />
-              <strong>{i.mode}</strong>
-            </td>
-            <td>
-              Vehicle No.
-              <br />
-              {i.vehicle || "—"}
+            <td colSpan={2}>
+              <strong>Ship To: {shipping.name || "—"}</strong>
+              <p>{shipping.address || "—"}</p>
+              <p>{shipping.mobile}</p>
+              <p>
+                Payment: {i.mode} · Vehicle: {i.vehicle || "—"}
+              </p>
             </td>
           </tr>
         </tbody>
@@ -82,6 +115,7 @@ export function InvoicePreview({
               "HSN Code",
               "Bill Qty",
               "Price",
+              "Tax (incl.)",
               "Amount",
             ].map((x) => (
               <th key={x}>{x}</th>
@@ -96,6 +130,7 @@ export function InvoicePreview({
               <td>{r.hsn}</td>
               <td>{r.qty.toFixed(2)}</td>
               <td>{(r.finalPrice ?? r.price).toFixed(2)}</td>
+              <td>{r.gstPercent ?? i.gst}%</td>
               <td>{round(r.qty * (r.finalPrice ?? r.price)).toFixed(2)}</td>
             </tr>
           ))}
@@ -117,13 +152,14 @@ export function InvoicePreview({
               {payment.upiId && <p>UPI ID: {payment.upiId}</p>}
               {payment.payeeName && <p>Payee: {payment.payeeName}</p>}
             </div>
-            {payment.showQrOnInvoices !== false && payment.qrCode && (
+            {qr.key === qrKey && qr.source && (
               <PaymentQr
                 className="invoice-qr"
-                source={payment.qrCode}
+                source={qr.source}
                 alt="Business UPI payment QR code"
               />
             )}
+            {qr.key === qrKey && qr.error && <p role="alert">{qr.error}</p>}
           </div>
         </div>
         <div className="invoice-sums">
@@ -135,7 +171,15 @@ export function InvoicePreview({
               : []),
             ...(i.returns !== 0 ? [["Return Amount", money(i.returns)]] : []),
             ["Net Sale Amount", money(t.net)],
+            ["Taxable Amount", money(t.taxable)],
+            ...taxRows(i).map(([label, value]) => [label, money(value)]),
+            ...(taxRows(i).length ? [["Total Tax", money(t.tax)]] : []),
             ["Grand Total", money(t.grand)],
+            [
+              "Received",
+              p.received === null ? "Not recorded" : money(p.received),
+            ],
+            ["Balance", p.balance === null ? "Not recorded" : money(p.balance)],
           ].map(([k, v]) => (
             <div key={k}>
               <span>{k}:</span>
@@ -143,31 +187,20 @@ export function InvoicePreview({
             </div>
           ))}
         </div>
-        <table className="invoice-tax">
-          <thead>
-            <tr>
-              <th>Taxable Amount</th>
-              <th>CGST ({i.gst / 2}%)</th>
-              <th>SGST ({i.gst / 2}%)</th>
-              <th>Total Tax</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              {[t.taxable, t.cgst, t.sgst, t.tax].map((v, n) => (
-                <td key={n}>{v.toFixed(2)}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
         <p className="invoice-words">{amountToWords(t.grand)}</p>
         <div className="invoice-declaration">
           <div>
             <u>Declaration</u>
-            <p>{declaration}</p>
+            <p>{i.declaration || declaration}</p>
           </div>
           <div>
             <strong>For {s.name}</strong>
+            <div className="authorisation-images">
+              {s.seal && <img src={s.seal} alt="Business seal" />}
+              {s.signature && (
+                <img src={s.signature} alt="Authorised signature" />
+              )}
+            </div>
             <p>Authorised Signatory</p>
           </div>
         </div>

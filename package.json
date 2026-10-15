@@ -12,7 +12,8 @@
     "format": "prettier --write src tests *.json *.ts index.html README.md",
     "server": "node server/server.js",
     "test:server": "tsx tests/server.mjs",
-    "test:frontend": "tsx tests/payment-browser.mjs"
+    "test:frontend": "tsx tests/payment-browser.mjs",
+    "lint": "eslint src"
   },
   "dependencies": {
     "cors": "^2.8.6",
@@ -23,6 +24,7 @@
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.468.0",
     "mongoose": "^9.10.2",
+    "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tsx": "^4.23.15"
@@ -30,14 +32,17 @@
   "devDependencies": {
     "@playwright/test": "^1.51.0",
     "@tailwindcss/vite": "^4.1.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
+    "eslint": "^10.12.0",
     "mongodb-memory-server": "^11.3.0",
     "prettier": "^3.9.9",
     "supertest": "^7.3.0",
     "tailwindcss": "^4.1.0",
     "typescript": "~5.8.3",
+    "typescript-eslint": "^8.71.2",
     "vite": "^6.3.0",
     "vitest": "^5.0.2"
   }

@@ -2078,3 +2078,20 @@ select {
     display: none;
   }
 }
+
+.business-asset { display: block; width: 140px; height: 100px; object-fit: contain; border: 1px solid #e9e1f5; border-radius: 8px; margin: 12px 0; }
+.invoice-logo { width: 72px; height: 55px; object-fit: contain; float: left; margin: 0 12px 8px 0; }
+.authorisation-images { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.authorisation-images img { width: 80px; height: 65px; object-fit: contain; }
+.invoice-paper td, .invoice-paper p { overflow-wrap: anywhere; }
+.invoice-lines { table-layout: fixed; }
+.invoice-lines th:nth-child(2) { width: 29%; }
+.invoice-declaration { break-inside: avoid; }
+.stock-warning { color: #9a3412; font-size: 12px; }
+.invoice-lines th:nth-child(1) { width: 5%; }
+.invoice-lines th:nth-child(2) { width: 29%; }
+.invoice-lines th:nth-child(3) { width: 12%; }
+.invoice-lines th:nth-child(4) { width: 9%; }
+.invoice-lines th:nth-child(5) { width: 14%; }
+.invoice-lines th:nth-child(6) { width: 10%; }
+.invoice-lines th:nth-child(7) { width: 21%; }

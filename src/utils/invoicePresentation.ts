@@ -1,3 +1,4 @@
+import { calculate, round } from "./calculations";
 import type { Invoice } from "./invoiceTypes";
 
 // Format calendar dates without timezone conversion or changing saved values.
@@ -18,4 +19,32 @@ export function invoiceFilename(invoice: Invoice): string {
       .replace(/^_+|_+$/g, "") || fallback;
   const date = formatInvoiceDate(invoice.date).replaceAll("/", "-");
   return `Invoice_${safe(invoice.buyer.name, "Buyer")}_${safe(invoice.number, "Invoice")}_${safe(date, "Date")}.pdf`;
+}
+
+export function paymentSummary(invoice: Invoice) {
+  const total = calculate(invoice).grand;
+  const received = invoice.receivedAmount;
+  if (received === undefined || !Number.isFinite(received) || received < 0)
+    return { received: null, balance: null, status: "Unknown" };
+  const balance = round(Math.max(0, total - received));
+  return {
+    received,
+    balance,
+    status:
+      invoice.status === "Cancelled"
+        ? "Cancelled"
+        : balance === 0
+          ? "Paid"
+          : received > 0
+            ? "Partial"
+            : "Unpaid",
+  };
+}
+
+export function taxRows(invoice: Invoice) {
+  const t = calculate(invoice);
+  if (invoice.taxMode === "non-gst" || t.tax === 0) return [];
+  return invoice.taxJurisdiction === "inter"
+    ? [["IGST", t.tax] as const]
+    : [["CGST", t.cgst] as const, ["SGST", t.sgst] as const];
 }
