@@ -4,6 +4,8 @@ import { businessProfileApi } from "../services/api";
 import { LayoutDashboard } from "lucide-react";
 import { BusinessAssets } from "../components/BusinessAssets";
 import {
+  lazy,
+  Suspense,
   useState,
   useEffect,
   useCallback,
@@ -66,10 +68,14 @@ import { ProductManager } from "../components/ProductManager";
 import { AddItemModal } from "../components/AddItemModal";
 import { Modal } from "../components/Modal";
 import { PaymentQr } from "../components/PaymentQr";
-import { InvoicePreview } from "../components/InvoicePreview";
+const InvoicePreview = lazy(() =>
+  import("../components/InvoicePreview").then((m) => ({
+    default: m.InvoicePreview,
+  })),
+);
 import { readQrImage } from "../utils/paymentImage";
 import { invoiceFilename } from "../utils/invoicePresentation";
-import { generatePDF } from "../utils/pdfGenerator";
+
 export default function BillingPage() {
   const [seller, setSeller] = useState<Seller>(() =>
     read(keys.seller, defaultSeller),
@@ -104,7 +110,7 @@ export default function BillingPage() {
       setProfileBusy(false);
     }
   };
-  const [paperSize, setPaperSize] = useState<"a4" | "a5">("a5");
+  const [paperSize, setPaperSize] = useState<"a4" | "a5">("a4");
   const [products, setProducts] = useState<Product[]>(() => []);
   const [invoice, setInvoiceState] = useState<Invoice>(() =>
     read(keys.working, newInvoice()),
@@ -436,6 +442,17 @@ export default function BillingPage() {
       setNotice((e as Error).message);
     }
   };
+  const startInvoice = () => {
+    if (invoice.items.length || invoice.buyer.name || invoice.buyer.address) {
+      if (!persist(`billing-app:archived-draft:${invoice.id}`, invoice)) return;
+    }
+    setInvoice(newInvoice());
+    setPage("billing");
+    setNotice("New invoice ready. Previous work is available in local drafts.");
+  };
+  const navigate = (target: string) =>
+    target === "billing" ? startInvoice() : setPage(target);
+  const [localDraftsOpen, setLocalDraftsOpen] = useState(false);
   const exportInvoice = async (print = false) => {
     if (!invoice.items.length) {
       setNotice("Add at least one item before printing or downloading.");
@@ -465,6 +482,7 @@ export default function BillingPage() {
         throw new Error(
           "Payment settings unavailable. Retry loading in Business settings, then export again.",
         );
+      const { generatePDF } = await import("../utils/pdfGenerator");
       const doc = await generatePDF(
         invoice,
         invoice.seller || seller,
@@ -562,7 +580,7 @@ export default function BillingPage() {
               <button
                 key={id}
                 className={page === id ? "active" : ""}
-                onClick={() => setPage(id)}
+                onClick={() => navigate(id)}
               >
                 <Icon size={19} />
                 {label}
@@ -641,7 +659,7 @@ export default function BillingPage() {
             {page === "dashboard" ? (
               <Dashboard
                 products={products}
-                navigate={setPage}
+                navigate={navigate}
                 open={(i) => {
                   setInvoice(i);
                   setPage("billing");
@@ -658,19 +676,7 @@ export default function BillingPage() {
                     </h1>
                     <p>A little less paperwork. A little more business.</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      if (
-                        (invoice.items.length || invoice.buyer.name) &&
-                        !confirm(
-                          "Start a new invoice? Save a draft first if you want to keep this invoice.",
-                        )
-                      )
-                        return;
-                      setInvoice(newInvoice());
-                      setNotice("New invoice ready.");
-                    }}
-                  >
+                  <button onClick={startInvoice}>
                     <Plus size={17} />
                     New invoice
                   </button>
@@ -854,6 +860,9 @@ export default function BillingPage() {
                         <FolderOpen size={16} />
                         Load Draft
                       </button>
+                      <button onClick={() => setLocalDraftsOpen(true)}>
+                        Local drafts
+                      </button>
                       <button
                         className="text-button muted"
                         onClick={() => {
@@ -904,7 +913,8 @@ export default function BillingPage() {
                         </button>
                       </div>
                       <p>
-                        A5 download <span>·</span> A4 print
+                        {paperSize.toUpperCase()} preview <span>·</span>{" "}
+                        download &amp; print
                       </p>
                     </div>
                     <div className="help-note">
@@ -1246,6 +1256,43 @@ export default function BillingPage() {
           </main>
         </div>
       </div>
+      {localDraftsOpen && (
+        <Modal title="Local drafts" onClose={() => setLocalDraftsOpen(false)}>
+          {Object.keys(localStorage)
+            .filter((key) => key.startsWith("billing-app:archived-draft:"))
+            .map((key) => {
+              const draft = read<Invoice | null>(key, null);
+              return (
+                draft && (
+                  <p key={key}>
+                    <button
+                      onClick={() => {
+                        if (
+                          (invoice.items.length || invoice.buyer.name) &&
+                          !persist(
+                            `billing-app:archived-draft:${invoice.id}`,
+                            invoice,
+                          )
+                        )
+                          return;
+                        setInvoice(draft);
+                        setPage("billing");
+                        setLocalDraftsOpen(false);
+                      }}
+                    >
+                      {draft.number || "Unnumbered invoice"} ·{" "}
+                      {draft.buyer.name || "No buyer"} · {draft.date}
+                    </button>
+                  </p>
+                )
+              );
+            })}
+          <p>
+            Saved server drafts remain in Sales. Use Load Draft for your
+            explicitly saved local draft.
+          </p>
+        </Modal>
+      )}
       {qrPreview && (
         <Modal title="QR Code Preview" onClose={closeQrPreview}>
           <div className="qr-enlarged">
@@ -1316,12 +1363,14 @@ export default function BillingPage() {
             </p>
           )}
           <div className="preview-scroll">
-            <InvoicePreview
-              format={paperSize}
-              invoice={invoice}
-              seller={invoice.seller || seller}
-              payment={{ ...savedPayment, qrMode: savedQrMode }}
-            />
+            <Suspense fallback={<p role="status">Loading invoice preview…</p>}>
+              <InvoicePreview
+                format={paperSize}
+                invoice={invoice}
+                seller={invoice.seller || seller}
+                payment={{ ...savedPayment, qrMode: savedQrMode }}
+              />
+            </Suspense>
           </div>
           <footer>
             <span className="muted">
@@ -1338,14 +1387,6 @@ export default function BillingPage() {
           </footer>
         </Modal>
       )}
-      <div className="print-only">
-        <InvoicePreview
-          format={paperSize}
-          invoice={invoice}
-          seller={invoice.seller || seller}
-          payment={{ ...savedPayment, qrMode: savedQrMode }}
-        />
-      </div>
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, test } from "vitest";
 import { calculate, round } from "../src/utils/calculations";
 import { amountToWords } from "../src/utils/amountToWords";
 import { newInvoice } from "../src/utils/invoiceTypes";

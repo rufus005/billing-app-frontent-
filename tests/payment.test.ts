@@ -96,3 +96,42 @@ describe("QR image validation and aspect ratio", () => {
     expect(containImage(120, 240, 27)).toEqual({ width: 13.5, height: 27 });
   });
 });
+
+// An uploaded original remains authoritative unless dynamic mode is explicit.
+it("preserves an uploaded static QR when mode is unset", async () => {
+  const { invoiceQr } = await import("../src/utils/paymentQr");
+  const { newInvoice } = await import("../src/utils/invoiceTypes");
+  expect(
+    await invoiceQr(newInvoice(), {
+      upiId: "sample@bank",
+      payeeName: "Sample",
+      qrCode: "data:image/png;base64,original",
+    }),
+  ).toBe("data:image/png;base64,original");
+});
+
+it("coalesces concurrent reads but fetches again after completion", async () => {
+  const fetch = vi.fn().mockImplementation(async () => new Response("[]"));
+  vi.stubGlobal("fetch", fetch);
+  await Promise.all([api("/products"), api("/products")]);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await api("/products");
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+it("does not expire a newer session when an older request returns 401", async () => {
+  let resolve!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((r) => {
+          resolve = r;
+        }),
+    ),
+  );
+  const pending = api("/products");
+  vi.mocked(sessionStorage.getItem).mockReturnValue("new-token");
+  resolve(new Response('{"message":"Expired"}', { status: 401 }));
+  await expect(pending).rejects.toThrow("Expired");
+  expect(sessionStorage.removeItem).not.toHaveBeenCalled();
+});

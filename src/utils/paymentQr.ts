@@ -38,6 +38,7 @@ export async function invoiceQr(
   const dynamic =
     payment.qrMode === "dynamic" ||
     (payment.qrMode === undefined &&
+      !payment.qrCode &&
       !!payment.upiId.trim() &&
       !!payment.payeeName?.trim());
   if (!dynamic) return payment.qrCode;

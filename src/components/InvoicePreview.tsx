@@ -14,7 +14,7 @@ export function InvoicePreview({
   invoice,
   seller,
   payment = emptyPayment,
-  format = "a5",
+  format = "a4",
 }: {
   invoice: Invoice;
   seller: Seller;

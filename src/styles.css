@@ -2660,3 +2660,13 @@ select {
     flex-direction: column;
   }
 }
+
+/* Scale the same PDF document to the available preview width. */
+.invoice-pdf-page { max-width: 100%; }
+.main-shell, .billing-main, .summary-column, .dashboard-grid > *, .card { min-width: 0; }
+.card, .page-heading { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .page-heading, .profile-save, .export-secondary { flex-wrap: wrap; gap: 12px; }
+  .dashboard-filters { flex-wrap: wrap; }
+  .preview-scroll { padding: 4px; }
+}

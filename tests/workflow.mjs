@@ -1,57 +1,228 @@
 // Uses only an isolated replica set. Never reads or changes production records.
-import { chromium, expect } from '@playwright/test';
-import { createServer } from 'vite';
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-const backend = new URL('../../billin-app-server/server/', import.meta.url);
-const { MongoMemoryReplSet } = await import(new URL('node_modules/mongodb-memory-server-core/lib/index.js', backend));
-const { default: mongoose } = await import(new URL('node_modules/mongoose/index.js', backend));
-process.env.MONGO_URI = '';
-process.env.ADMIN_USERNAME = 'workflow-test'; process.env.ADMIN_PASSWORD = 'local-test-password'; process.env.JWT_SECRET = 'isolated-workflow-secret';
-process.env.CLIENT_URL = 'http://127.0.0.1:5199';
-process.env.MONGOMS_DOWNLOAD_DIR = '/tmp/billing-test-mongodb';
-const { createApp, initialize } = await import(new URL('app.js',backend));
-let db,server,vite,browser;
+import { chromium, expect } from "@playwright/test";
+import { createServer } from "vite";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const backend = new URL("../../billin-app-server/server/", import.meta.url);
+const { MongoMemoryReplSet } = await import(
+  new URL("node_modules/mongodb-memory-server-core/lib/index.js", backend)
+);
+const { default: mongoose } = await import(
+  new URL("node_modules/mongoose/index.js", backend)
+);
+process.env.MONGO_URI = "";
+process.env.ADMIN_USERNAME = "workflow-test";
+process.env.ADMIN_PASSWORD = "local-test-password";
+process.env.JWT_SECRET = "isolated-workflow-secret";
+process.env.CLIENT_URL = "http://127.0.0.1:5199";
+process.env.MONGOMS_DOWNLOAD_DIR = "/tmp/billing-test-mongodb";
+const { createApp, initialize } = await import(new URL("app.js", backend));
+let db, server, vite, browser;
 try {
-  db = await MongoMemoryReplSet.create({replSet:{count:1}});
-  await mongoose.connect(db.getUri()); await initialize();
-  server = createApp().listen(0,'127.0.0.1'); await new Promise(r => server.once('listening',r));
+  db = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+  await mongoose.connect(db.getUri());
+  await initialize();
+  server = createApp().listen(0, "127.0.0.1");
+  await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${server.address().port}`;
-  vite = await createServer({cacheDir:'node_modules/.vite-workflow',define:{'import.meta.env.VITE_API_URL':JSON.stringify(base)},server:{host:'127.0.0.1',port:5199,strictPort:true,watch:null}}); await vite.listen();
-  browser = await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
-  const page = await browser.newPage({viewport:{width:1440,height:1100},acceptDownloads:true}); page.setDefaultTimeout(60000);
-  const errors = []; page.on('pageerror',e => errors.push(e.message)); page.on('dialog',d => d.accept());
-  await page.goto('http://127.0.0.1:5199');
-  await page.getByLabel('Username').fill('workflow-test'); await page.getByLabel('Password').fill('local-test-password'); await page.getByRole('button',{name:'Log in',exact:true}).click();
-  await expect(page.getByRole('heading',{name:'Create invoice'})).toBeVisible();
-  const nav = name => page.locator('.sidebar').getByRole('button',{name,exact:true}).click();
-  await nav('Buyers'); await page.getByRole('button',{name:'Create Buyer',exact:true}).click();
-  await page.getByLabel('Buyer Name',{exact:true}).fill('Workflow Buyer'); await page.getByLabel('Mobile Number',{exact:true}).fill('9000000000');
-  await page.getByRole('button',{name:'02 Address',exact:true}).click(); await page.getByLabel('Address / Area',{exact:true}).fill('42 Test Road'); await page.getByLabel('City / District',{exact:true}).fill('Bengaluru'); await page.getByLabel('State',{exact:true}).fill('Karnataka');
-  await page.screenshot({path:'/tmp/billing-party-desktop.png',fullPage:true});
-  await page.getByRole('button',{name:'Save Buyer',exact:true}).click(); await expect(page.getByText('Workflow Buyer',{exact:true})).toBeVisible();
-  await nav('Products'); await page.getByRole('button',{name:'Add product',exact:true}).click();
-  await page.getByLabel('Product name',{exact:true}).fill('Workflow Cabinet'); await page.getByLabel('Item code / SKU',{exact:true}).fill('WF-001'); await page.getByLabel('Barcode',{exact:true}).fill('8900000000001'); await page.getByLabel('Normal price (GST inclusive)',{exact:true}).fill('18000'); await page.getByLabel('Stock',{exact:true}).fill('10'); await page.getByRole('button',{name:'Save product',exact:true}).click();
-  await expect(page.getByText('Workflow Cabinet',{exact:true})).toBeVisible();
-  await nav('Business settings'); await page.getByLabel('Company / seller name').fill('Workflow Business'); await page.getByLabel('Invoice QR mode').selectOption('dynamic'); await page.getByRole('button',{name:'Save business details',exact:true}).click();
-  await page.getByLabel('UPI ID',{exact:true}).fill('workflow@bank'); await page.getByLabel('UPI payee name',{exact:true}).fill('Workflow Business');
-  await page.getByRole('button',{name:'Save Changes',exact:true}).click(); await expect(page.getByText('Payment settings saved successfully.',{exact:true})).toBeVisible();
-  await nav('Create invoice'); await page.getByLabel('Buyer',{exact:true}).selectOption({label:'Workflow Buyer · 9000000000'});
-  await page.getByLabel('Invoice number',{exact:true}).fill('WORKFLOW-18000'); await page.getByLabel('Scan barcode or enter item code').fill('8900000000001'); await page.getByLabel('Scan barcode or enter item code').press('Enter');
-  await expect(page.getByLabel('Item 1 description')).toHaveValue('Workflow Cabinet');
-  await page.getByLabel('Received amount',{exact:true}).fill('5000'); await page.getByRole('button',{name:'Complete Sale',exact:true}).click();
-  await expect(page.getByText('Invoice saved to MongoDB.',{exact:true})).toBeVisible();
-  const token = await page.evaluate(() => sessionStorage.getItem('billing-app:token'));
-  const get = async path => (await fetch(base+'/api'+path,{headers:{Authorization:`Bearer ${token}`}})).json();
-  let invoices = await get('/invoices'); assert.equal(invoices.length,1); assert.equal(invoices[0].totals.grand,18000); assert.equal((await get('/products'))[0].stock,9);
-  await page.getByRole('button',{name:'Preview',exact:true}).click(); await expect(page.locator('.invoice-preview')).toHaveAttribute('aria-busy','false'); await page.getByRole('button',{name:'Close dialog',exact:true}).click();
-  const downloadPromise = page.waitForEvent('download'); await page.getByRole('button',{name:'Download PDF',exact:true}).click(); const download = await downloadPromise; await download.saveAs('/tmp/billing-workflow.pdf'); assert.ok(fs.statSync('/tmp/billing-workflow.pdf').size > 10000);
-  await page.getByRole('button',{name:'Print',exact:true}).click(); await expect(page.locator('iframe.print-frame')).toHaveCount(1);
-  await nav('Sales'); await page.getByRole('button',{name:'Record Payment / history',exact:true}).click(); await page.getByLabel('Payment amount',{exact:true}).fill('3000'); await page.getByLabel('Payment method',{exact:true}).selectOption('UPI'); await page.getByLabel('Payment reference',{exact:true}).fill('WF-PAYMENT-1'); await page.getByRole('button',{name:'Confirm payment',exact:true}).click();
-  await expect(page.getByText('Payment recorded.',{exact:true})).toBeVisible(); invoices = await get('/invoices'); assert.equal(invoices[0].receivedAmount,8000); assert.equal(invoices[0].payments.length,1); assert.equal((await get('/products'))[0].stock,9);
-  await nav('Dashboard'); await expect(page.getByRole('heading',{name:'Business overview'})).toBeVisible(); await expect(page.locator('.metric-card').nth(2)).toContainText('10,000.00');
-  await page.screenshot({path:'/tmp/billing-dashboard-desktop.png',fullPage:true});
-  await page.setViewportSize({width:390,height:844}); await page.screenshot({path:'/tmp/billing-dashboard-mobile.png',fullPage:true}); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await page.reload(); await expect(page.getByRole('heading',{name:'Create invoice'})).toBeVisible(); assert.equal((await get('/business-profile')).name,'Workflow Business');
-  assert.deepEqual(errors,[]); console.log('PASS full browser → API → isolated MongoDB flow: login, buyer, product, profile, barcode, invoice, stock, preview, PDF, print request, partial payment, dashboard, responsive layout, reload.');
-} finally { await browser?.close(); await vite?.close(); if(server) await new Promise(r => server.close(r)); await mongoose.disconnect(); await db?.stop(); }
+  vite = await createServer({
+    cacheDir: "node_modules/.vite-workflow",
+    define: { "import.meta.env.VITE_API_URL": JSON.stringify(base) },
+    server: { host: "127.0.0.1", port: 5199, strictPort: true, watch: null },
+  });
+  await vite.listen();
+  browser = await chromium.launch({
+    executablePath: "/usr/bin/google-chrome",
+    headless: true,
+    args: ["--no-sandbox"],
+  });
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 1100 },
+    acceptDownloads: true,
+  });
+  page.setDefaultTimeout(60000);
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("dialog", (d) => d.accept());
+  await page.goto("http://127.0.0.1:5199");
+  await page.getByLabel("Username").fill("workflow-test");
+  await page.getByLabel("Password").fill("local-test-password");
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Create invoice" }),
+  ).toBeVisible();
+  const nav = (name) =>
+    page.locator(".sidebar").getByRole("button", { name, exact: true }).click();
+  await nav("Buyers");
+  await page.getByRole("button", { name: "Create Buyer", exact: true }).click();
+  await page.getByLabel("Buyer Name", { exact: true }).fill("Workflow Buyer");
+  await page.getByLabel("Mobile Number", { exact: true }).fill("9000000000");
+  await page.getByRole("button", { name: "02 Address", exact: true }).click();
+  await page.getByLabel("Address / Area", { exact: true }).fill("42 Test Road");
+  await page.getByLabel("City / District", { exact: true }).fill("Bengaluru");
+  await page.getByLabel("State", { exact: true }).fill("Karnataka");
+  await page.screenshot({
+    path: "/tmp/billing-party-desktop.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Save Buyer", exact: true }).click();
+  await expect(page.getByText("Workflow Buyer", { exact: true })).toBeVisible();
+  await nav("Products");
+  await page.getByRole("button", { name: "Create product", exact: true }).click();
+  await page
+    .getByLabel("Product name", { exact: true })
+    .fill("Workflow Cabinet");
+  await page.getByLabel("Item code / SKU", { exact: true }).fill("WF-001");
+  await page.getByLabel("Barcode", { exact: true }).fill("8900000000001");
+  await page
+    .getByLabel("Normal price (GST inclusive)", { exact: true })
+    .fill("18000");
+  await page.getByLabel("Stock", { exact: true }).fill("10");
+  await page.getByRole("button", { name: "Save product", exact: true }).click();
+  await expect(
+    page.getByText("Workflow Cabinet", { exact: true }),
+  ).toBeVisible();
+  await nav("Business settings");
+  await page.getByLabel("Company / seller name").fill("Workflow Business");
+  await page.getByLabel("Invoice QR mode").selectOption("dynamic");
+  await page
+    .getByRole("button", { name: "Save business details", exact: true })
+    .click();
+  await page.getByLabel("UPI ID", { exact: true }).fill("workflow@bank");
+  await page
+    .getByLabel("UPI payee name", { exact: true })
+    .fill("Workflow Business");
+  await page.getByRole("button", { name: "Save Changes", exact: true }).click();
+  await expect(
+    page.getByText("Payment settings saved successfully.", { exact: true }),
+  ).toBeVisible();
+  await nav("Create invoice");
+  await page
+    .getByLabel("Buyer", { exact: true })
+    .selectOption({ label: "Workflow Buyer · 9000000000" });
+  await page
+    .getByLabel("Invoice number", { exact: true })
+    .fill("WORKFLOW-18000");
+  await page
+    .getByLabel("Scan barcode or enter item code")
+    .fill("8900000000001");
+  await page.getByLabel("Scan barcode or enter item code").press("Enter");
+  await expect(page.getByLabel("Item 1 description")).toHaveValue(
+    "Workflow Cabinet",
+  );
+  await page.getByLabel("Received amount", { exact: true }).fill("5000");
+  await page
+    .getByRole("button", { name: "Complete Sale", exact: true })
+    .click();
+  await expect(
+    page.getByText("Invoice saved to MongoDB.", { exact: true }),
+  ).toBeVisible();
+  const token = await page.evaluate(() =>
+    sessionStorage.getItem("billing-app:token"),
+  );
+  const get = async (path) =>
+    (
+      await fetch(base + "/api" + path, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json();
+  let invoices = await get("/invoices");
+  assert.equal(invoices.length, 1);
+  assert.equal(invoices[0].totals.grand, 18000);
+  assert.equal((await get("/products"))[0].stock, 9);
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.locator(".invoice-preview")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF", exact: true }).click();
+  const download = await downloadPromise;
+  await download.saveAs("/tmp/billing-workflow.pdf");
+  assert.ok(fs.statSync("/tmp/billing-workflow.pdf").size > 10000);
+  await page.getByRole("button", { name: "Print", exact: true }).click();
+  await expect(page.locator("iframe.print-frame")).toHaveCount(1);
+  await nav("Sales");
+  await page
+    .getByRole("button", { name: "Record Payment / history", exact: true })
+    .click();
+  await page.getByLabel("Payment amount", { exact: true }).fill("3000");
+  await page.getByLabel("Payment method", { exact: true }).selectOption("UPI");
+  await page
+    .getByLabel("Payment reference", { exact: true })
+    .fill("WF-PAYMENT-1");
+  await page
+    .getByRole("button", { name: "Confirm payment", exact: true })
+    .click();
+  await expect(
+    page.getByText("Payment recorded.", { exact: true }),
+  ).toBeVisible();
+  invoices = await get("/invoices");
+  assert.equal(invoices[0].receivedAmount, 8000);
+  assert.equal(invoices[0].payments.length, 1);
+  assert.equal((await get("/products"))[0].stock, 9);
+  await nav("Dashboard");
+  await expect(
+    page.getByRole("heading", { name: "Business overview" }),
+  ).toBeVisible();
+  await expect(page.locator(".metric-card").nth(2)).toContainText("10,000.00");
+  await page.screenshot({
+    path: "/tmp/billing-dashboard-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: "/tmp/billing-dashboard-mobile.png",
+    fullPage: true,
+  });
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Create invoice" }),
+  ).toBeVisible();
+  assert.equal((await get("/business-profile")).name, "Workflow Business");
+  // Create must clear the form while keeping both explicit and displaced drafts.
+  await page.getByRole("button", { name: "Save Draft", exact: true }).click();
+  await nav("Create invoice");
+  await expect(page.getByLabel("Item 1 description")).toHaveCount(0);
+  await expect(page.getByLabel("Buyer", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "Local drafts", exact: true }).click();
+  await page.getByRole("button", { name: /WORKFLOW-18000/ }).click();
+  await expect(page.getByLabel("Item 1 description")).toHaveValue(
+    "Workflow Cabinet",
+  );
+  for (const width of [390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const name of [
+      "Dashboard",
+      "Sales",
+      "Buyers",
+      "Products",
+      "Business settings",
+      "Create invoice",
+    ]) {
+      await nav(name);
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        `${name} overflows at ${width}`,
+      );
+    }
+  }
+  assert.deepEqual(errors, []);
+  console.log(
+    "PASS full browser → API → isolated MongoDB flow: login, buyer, product, profile, barcode, invoice, stock, preview, PDF, print request, partial payment, dashboard, responsive layout, reload.",
+  );
+} finally {
+  await browser?.close();
+  await vite?.close();
+  if (server) await new Promise((r) => server.close(r));
+  await mongoose.disconnect();
+  await db?.stop();
+}

@@ -14,20 +14,42 @@ export const session = {
   set: (token: string) => sessionStorage.setItem(tokenKey, token),
   clear: () => sessionStorage.removeItem(tokenKey),
 };
-export async function api<T>(
+const pending = new Map<string, Promise<unknown>>();
+export function api<T>(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  timeoutMs = 20000,
+): Promise<T> {
+  // Only coalesce concurrent reads, scoped to the current credentials. Never cache results.
+  const key = JSON.stringify([session.get(), path, timeoutMs]);
+  if (method !== "GET") {
+    pending.clear();
+    return request<T>(path, method, body, timeoutMs);
+  }
+  const existing = pending.get(key);
+  if (existing) return existing as Promise<T>;
+  const promise = request<T>(path, method, body, timeoutMs).finally(() => {
+    if (pending.get(key) === promise) pending.delete(key);
+  });
+  pending.set(key, promise);
+  return promise;
+}
+async function request<T>(
   path: string,
   method = "GET",
   body?: unknown,
   timeoutMs?: number,
 ): Promise<T> {
+  const token = session.get();
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}/api${path}`, {
       method,
       signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       headers: {
-        "Content-Type": "application/json",
-        ...(session.get() ? { Authorization: `Bearer ${session.get()}` } : {}),
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -36,7 +58,11 @@ export async function api<T>(
       throw Error("The server took too long to respond. Please retry.");
     throw Error("Server unavailable. Check that the backend is running.");
   }
-  if (response.status === 401 && path !== "/auth/login") {
+  if (
+    response.status === 401 &&
+    path !== "/auth/login" &&
+    session.get() === token
+  ) {
     session.clear();
     window.dispatchEvent(new Event("billing-logout"));
   }

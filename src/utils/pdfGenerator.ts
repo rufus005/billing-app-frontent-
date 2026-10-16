@@ -30,7 +30,7 @@ export async function generatePDF(
   i: Invoice,
   s: Seller,
   payment: BusinessPaymentSettings = { upiId: "", qrCode: "" },
-  format: "a4" | "a5" = "a5",
+  format: "a4" | "a5" = "a4",
 ) {
   const doc = new jsPDF({
     orientation: "portrait",
@@ -38,7 +38,7 @@ export async function generatePDF(
     format,
     compress: true,
   });
-  const margin = 8;
+  const margin = format === "a4" ? 10 : 7;
   const width = doc.internal.pageSize.getWidth() - margin * 2;
   const [normal, bold] = await fonts();
   doc.addFileToVFS("InvoiceSans.ttf", normal);
@@ -78,14 +78,14 @@ export async function generatePDF(
   };
   const styles = {
     font: "Invoice",
-    fontSize: format === "a4" ? 10 : 8.5,
+    fontSize: format === "a4" ? 9 : 7,
     textColor: 0,
     lineColor: 70,
-    lineWidth: 0.15,
-    cellPadding: 1.8,
+    lineWidth: 0,
+    cellPadding: 1.2,
     overflow: "linebreak" as const,
   };
-  let y = 8;
+  let y = 6;
   const table = (
     body: RowInput[],
     extra: Partial<import("jspdf-autotable").UserOptions> = {},
@@ -93,7 +93,7 @@ export async function generatePDF(
     autoTable(doc, {
       startY: y,
       margin: { top: 13, bottom: 12, left: margin, right: margin },
-      theme: "grid",
+      theme: "plain",
       styles,
       body,
       rowPageBreak: "avoid",
@@ -106,48 +106,84 @@ export async function generatePDF(
     [
       {
         content:
-          i.taxMode === "non-gst" ? "SALES INVOICE · NON-GST" : "SALES INVOICE",
-        styles: {
-          fontStyle: "bold",
-          fontSize: 12,
-          halign: "center",
-          fillColor: [245, 245, 245],
-        },
+          i.taxMode === "non-gst" ? "SALES INVOICE · NON-GST" : "TAX INVOICE",
+        styles: { fontStyle: "bold", fontSize: 8, cellWidth: 26 },
       },
+      { content: "ORIGINAL FOR RECIPIENT", styles: { fontSize: 7 } },
     ],
   ]);
+  const location = [s.city, s.state, s.pin]
+    .filter(Boolean)
+    .filter((v) => !s.address.toLowerCase().includes(v!.toLowerCase()))
+    .join(", ");
+  const sellerDetails = [
+    s.address,
+    location,
+    [
+      s.phone && `Mobile: ${s.phone}`,
+      i.taxMode !== "non-gst" && s.gstin && `GSTIN: ${s.gstin}`,
+      s.pan && `PAN: ${s.pan}`,
+    ]
+      .filter(Boolean)
+      .join("    "),
+    s.email && `Email: ${s.email}`,
+    s.website,
+  ]
+    .filter(Boolean)
+    .join("\n");
   table(
     [
       [
+        { content: "", rowSpan: 2, styles: { cellWidth: s.logo ? 35 : 0.1 } },
         {
-          content: `${s.name}\n${s.address}\n${i.taxMode === "non-gst" ? "" : `GSTIN: ${s.gstin}\n`}Ph: ${s.phone}${s.email ? `\n${s.email}` : ""}`,
-          styles: {
-            cellWidth: width * 0.62,
-            minCellHeight: s.logo ? 26 : 0,
-            cellPadding: { top: 2, bottom: 2, left: s.logo ? 27 : 2, right: 2 },
-          },
+          content: s.name,
+          styles: { fontSize: format === "a4" ? 15 : 11, fontStyle: "bold" },
         },
+      ],
+      [{ content: sellerDetails }],
+    ],
+    {
+      didDrawCell: (data) => {
+        if (data.column.index === 0 && data.row.index === 0 && s.logo)
+          drawImage(0, data.cell.x, data.cell.y, 31);
+      },
+    },
+  );
+  y += 2;
+  doc.setLineWidth(1);
+  doc.line(margin, y, margin + width, y);
+  y += 1;
+  table(
+    [
+      [
+        `Invoice No: ${i.number}`,
         {
-          content: `Invoice No. ${i.number}\nDated: ${formatInvoiceDate(i.date)}${i.dueDate ? `\nDue: ${formatInvoiceDate(i.dueDate)}` : ""}\nPayment: ${i.mode}\nVehicle: ${i.vehicle || "—"}`,
+          content: `Invoice Date: ${formatInvoiceDate(i.date)}${i.time ? " " + i.time : ""}${i.dueDate ? `\nDue: ${formatInvoiceDate(i.dueDate)}` : ""}`,
+          styles: { halign: "right" },
         },
       ],
     ],
     {
-      didDrawCell: (data) => {
-        if (data.column.index === 0)
-          drawImage(0, data.cell.x + 2, data.cell.y + 2, 23);
+      styles: {
+        ...styles,
+        fillColor: [232, 232, 232],
+        fontStyle: "bold",
+        cellPadding: 2,
       },
     },
   );
   const address = (label: string, buyer: Invoice["buyer"]) =>
-    `${label}: ${buyer.name || "—"}\n${buyer.address || "—"}\nGSTIN: ${buyer.gstin || "—"}\nMobile: ${buyer.mobile || "—"}`;
-  table(
     [
-      [
-        address("Bill To · Buyer", i.buyer),
-        address("Ship To", i.shipTo || i.buyer),
-      ],
-    ],
+      label,
+      buyer.name || "—",
+      buyer.address || "—",
+      buyer.gstin && `GSTIN: ${buyer.gstin}`,
+      buyer.mobile && `Mobile: ${buyer.mobile}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  table(
+    [[address("BILL TO", i.buyer), address("SHIP TO", i.shipTo || i.buyer)]],
     {
       columnStyles: {
         0: { cellWidth: width / 2 },
@@ -155,57 +191,51 @@ export async function generatePDF(
       },
     },
   );
+  y += 2;
+  const itemTop = y;
   table(
-    i.items.map((r, n) => [
-      n + 1,
-      r.name + (r.discountPercent ? ` (discount ${r.discountPercent}%)` : ""),
-      r.hsn,
-      r.qty.toFixed(2),
-      (r.finalPrice ?? r.price).toFixed(2),
-      `${i.taxMode === "non-gst" ? 0 : (r.gstPercent ?? i.gst)}%`,
-      (
-        Math.round(
-          (r.qty *
-            (r.finalPrice ?? r.price) *
-            (1 - (r.discountPercent || 0) / 100) +
-            Number.EPSILON) *
-            100,
-        ) / 100
-      ).toFixed(2),
-    ]),
+    i.items.map((r) => {
+      const gst = i.taxMode === "non-gst" ? 0 : (r.gstPercent ?? i.gst);
+      const rate =
+        (r.finalPrice ?? r.price) * (1 - (r.discountPercent || 0) / 100);
+      const amount = Math.round((r.qty * rate + Number.EPSILON) * 100) / 100;
+      const taxable =
+        i.pricingMode === "exclusive" ? amount : amount / (1 + gst / 100);
+      const tax =
+        i.pricingMode === "exclusive" ? (amount * gst) / 100 : amount - taxable;
+      return [
+        r.name + (r.discountPercent ? ` (discount ${r.discountPercent}%)` : ""),
+        r.hsn,
+        String(r.qty),
+        (i.pricingMode === "exclusive" ? rate : rate / (1 + gst / 100)).toFixed(
+          2,
+        ),
+        `${tax.toFixed(2)}\n(${gst}%)`,
+        (taxable + tax).toFixed(2),
+      ];
+    }),
     {
-      head: [
-        [
-          "#",
-          "Item",
-          "HSN",
-          "Qty",
-          "Rate (₹)",
-          i.pricingMode === "exclusive" ? "GST" : "Tax incl.",
-          "Amount (₹)",
-        ],
-      ],
+      head: [["ITEMS", "HSN", "QTY.", "RATE", "TAX", "AMOUNT"]],
       headStyles: {
-        fillColor: [245, 245, 245],
+        fillColor: [232, 232, 232],
         textColor: 0,
         fontStyle: "bold",
+        lineWidth: { top: 0.4, bottom: 0.4 },
       },
+      bodyStyles: { lineWidth: { bottom: 0.1 }, lineColor: 190 },
       columnStyles: {
-        0: { cellWidth: width * 0.05 },
-        1: { cellWidth: width * 0.27 },
-        2: { cellWidth: width * 0.13 },
-        3: { cellWidth: width * 0.08, halign: "right" },
-        4: { cellWidth: width * 0.15, halign: "right" },
-        5: { cellWidth: width * 0.1 },
-        6: { cellWidth: width * 0.22, halign: "right" },
+        0: { cellWidth: width * 0.32 },
+        1: { cellWidth: width * 0.12 },
+        2: { cellWidth: width * 0.1 },
+        3: { cellWidth: width * 0.15, halign: "right" },
+        4: { cellWidth: width * 0.14, halign: "right" },
+        5: { cellWidth: width * 0.17, halign: "right" },
       },
     },
   );
   const t = i.totals || calculate(i),
     p = paymentSummary(i);
   const sums: [string, string][] = [
-    ["Total Qty", String(t.qty)],
-    ["Sale Amount", money(t.sale)],
     ...(i.discount !== 0
       ? [["Special Discount", money(i.discount)] as [string, string]]
       : []),
@@ -217,89 +247,125 @@ export async function generatePDF(
       label,
       money(value),
     ]),
-    ...(taxRows(i).length
-      ? [["Total Tax", money(t.tax)] as [string, string]]
-      : []),
+
     ...(i.additionalCharges
       ? [["Additional Charges", money(i.additionalCharges)] as [string, string]]
       : []),
     ...(t.roundOff
       ? [["Round Off", money(t.roundOff)] as [string, string]]
       : []),
-    ["Grand Total", money(t.grand)],
+    ["Total Amount", money(t.grand)],
     [
       "Received Amount",
       p.received === null ? "Not recorded" : money(p.received),
     ],
     ["Balance Amount", p.balance === null ? "Not recorded" : money(p.balance)],
   ];
-  const bankText = `Bank Details\nBank Name: ${s.bank}\nAccount Number: ${s.account}\nIFSC: ${s.ifsc}${payment.payeeName ? `\nUPI Payee Name: ${payment.payeeName}` : ""}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}`;
-  const bankWidth = width * 0.48 - 2;
-  doc.setFontSize(styles.fontSize);
-  const bankLines = doc.splitTextToSize(bankText, bankWidth - 4).length;
-  const bankHeight =
-    bankLines * styles.fontSize * 0.3528 * 1.15 + 4 + (qr ? 34 : 0);
+  const bankText = `BANK DETAILS\nName: ${s.name}\nIFSC: ${s.ifsc}\nAccount No: ${s.account}\nBank: ${s.bank}${s.branch ? `, ${s.branch}` : ""}${payment.payeeName ? `\nUPI Payee Name: ${payment.payeeName}` : ""}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}`;
+  // A modest item area follows the reference without forcing blank pages for long tables.
+  if (doc.getNumberOfPages() === 1) y = Math.max(y, itemTop + (format === "a4" ? 45 : 30));
   table(
-    sums.map(([label, value], index) => [
-      ...(index === 0
-        ? [
-            {
-              content: bankText,
-              rowSpan: sums.length,
-              styles: {
-                cellWidth: bankWidth,
-                minCellHeight: bankHeight,
-                cellPadding: { top: 2, right: 2, bottom: qr ? 34 : 2, left: 2 },
-              },
-            },
-          ]
-        : []),
-      ...(index === 0
-        ? [
-            {
-              content: "",
-              rowSpan: sums.length,
-              styles: { cellWidth: 2, lineWidth: 0, fillColor: 255 },
-            },
-          ]
-        : []),
-      {
-        content: label + ":",
-        styles: { fontStyle: index >= sums.length - 3 ? "bold" : "normal" },
-      },
-      {
-        content: value,
-        styles: {
-          halign: "right",
-          fontStyle: index >= sums.length - 3 ? "bold" : "normal",
-        },
-      },
-    ]),
+    [
+      [
+        { content: "SUBTOTAL", styles: { fontStyle: "bold" } },
+        String(t.qty),
+        money(t.tax),
+        money(t.grand),
+      ],
+    ],
     {
-      pageBreak: "avoid",
-      columnStyles: {
-        0: { cellWidth: bankWidth },
-        1: { cellWidth: 2 },
-        2: { cellWidth: width * 0.28 },
-        3: { cellWidth: width * 0.24 },
+      styles: {
+        ...styles,
+        fontStyle: "bold",
+        lineWidth: { top: 0.4, bottom: 0.4 },
       },
-      didDrawCell: (data) => {
-        if (data.column.index === 0 && data.row.index === 0)
-          drawImage(
-            1,
-            data.cell.x + (data.cell.width - 31) / 2,
-            data.cell.y + data.cell.height - 33,
-            31,
-          );
+      columnStyles: {
+        0: { cellWidth: width * 0.42 },
+        1: { cellWidth: width * 0.12 },
+        2: { cellWidth: width * 0.23, halign: "right" },
+        3: { cellWidth: width * 0.23, halign: "right" },
       },
     },
   );
-  table([[{ content: amountToWords(t.grand), styles: { fontStyle: "bold" } }]]);
+  const bankWidth = width * 0.48;
+  doc.setFontSize(styles.fontSize);
+  const bankLines = doc.splitTextToSize(bankText, bankWidth - 4).length;
+  const bankHeight =
+    bankLines * styles.fontSize * 0.3528 * 1.15 + 4 + (qr ? 26 : 0);
+  const rightHeight =
+    sums.length * (styles.fontSize * 0.3528 * 1.15 + 2.4) + 42;
+  if (
+    y + Math.max(bankHeight, rightHeight) >
+    doc.internal.pageSize.getHeight() - 12
+  ) {
+    doc.addPage();
+    y = 13;
+  }
+  const footerTop = y;
   table(
     [
       [
         {
-          content: `Declaration\n${i.declaration || declaration}`,
+          content: bankText,
+          styles: {
+            minCellHeight: bankHeight,
+            cellPadding: { top: 2, right: 2, bottom: qr ? 26 : 2, left: 2 },
+          },
+        },
+      ],
+    ],
+    {
+      margin: {
+        left: margin,
+        right: margin + width - bankWidth,
+        top: 13,
+        bottom: 12,
+      },
+      didDrawCell: (data) => {
+        if (qr)
+          drawImage(
+            1,
+            data.cell.x + bankWidth - 27,
+            data.cell.y + data.cell.height - 26,
+            25,
+          );
+      },
+    },
+  );
+  const bankBottom = y;
+  y = footerTop;
+  table(
+    sums.map(([label, value]) => [
+      label + ":",
+      { content: value, styles: { halign: "right" } },
+    ]),
+    {
+      margin: {
+        left: margin + width * 0.52,
+        right: margin,
+        top: 13,
+        bottom: 12,
+      },
+      columnStyles: {
+        0: { cellWidth: width * 0.28 },
+        1: { cellWidth: width * 0.2 },
+      },
+    },
+  );
+  table([
+    [
+      { content: "", styles: { cellWidth: width * 0.48 } },
+      {
+        content: `Total Amount (in words)\n${amountToWords(t.grand)}`,
+        styles: { halign: "right" },
+      },
+    ],
+  ]);
+  table(
+    [
+      [
+        {
+          content: "",
           styles: { cellWidth: width * 0.48 },
         },
         { content: "", styles: { minCellHeight: 29 } },
@@ -329,7 +395,7 @@ export async function generatePDF(
           doc.addImage(
             canvas.toDataURL("image/png"),
             "PNG",
-            x + (w - imageWidth) / 2,
+            x + w - imageWidth - 2,
             top + 2,
             imageWidth,
             imageHeight,
@@ -344,21 +410,24 @@ export async function generatePDF(
         );
         doc.setFontSize(captionSize);
         const caption = ["AUTHORISED SIGNATORY FOR", company];
-        doc.text(caption, x + w / 2, top + 21, { align: "center" });
+        doc.text(caption, x + w - 2, top + 21, { align: "right" });
       },
     },
   );
+  y = Math.max(y, bankBottom);
+  if (i.declaration) table([[{ content: `Declaration\n${i.declaration}`, styles: { fontSize: 7 } }]]);
   const pages = doc.getNumberOfPages();
   for (let n = 1; n <= pages; n++) {
     doc.setPage(n);
     doc.setFontSize(6);
     if (n > 1) doc.text(`Invoice ${i.number} · continued`, margin, 8);
-    doc.text(
-      `Invoice ${i.number} • Page ${n} of ${pages}`,
-      doc.internal.pageSize.getWidth() / 2,
-      doc.internal.pageSize.getHeight() - 5,
-      { align: "center" },
-    );
+    if (pages > 1)
+      doc.text(
+        `Invoice ${i.number} • Page ${n} of ${pages}`,
+        doc.internal.pageSize.getWidth() / 2,
+        doc.internal.pageSize.getHeight() - 5,
+        { align: "center" },
+      );
   }
   return doc;
 }
