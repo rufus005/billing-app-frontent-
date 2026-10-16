@@ -17,6 +17,21 @@ export function TotalsPanel({
         <h2>Invoice summary</h2>
         <span className="tag">{t.qty} units</span>
       </div>
+      <label className="field">
+        Item pricing
+        <select
+          value={i.pricingMode || "inclusive"}
+          onChange={(e) =>
+            onChange({
+              ...i,
+              pricingMode: e.target.value as "inclusive" | "exclusive",
+            })
+          }
+        >
+          <option value="inclusive">GST Inclusive</option>
+          <option value="exclusive">GST Exclusive</option>
+        </select>
+      </label>
       <div className="total-line">
         <span>Sale amount</span>
         <strong>{money(t.sale)}</strong>
@@ -63,7 +78,7 @@ export function TotalsPanel({
               onChange({ ...i, gst: Math.min(100, numeric(e.target.value)) })
             }
           />
-          % <span>inclusive</span>
+          % <span>{i.pricingMode || "inclusive"}</span>
         </label>
       </div>
       <div className="total-line muted">
@@ -80,6 +95,34 @@ export function TotalsPanel({
         <span>Total tax</span>
         <span>{money(t.tax)}</span>
       </div>
+      <label className="total-line">
+        Additional charges (after tax)
+        <input
+          aria-label="Additional charges"
+          type="number"
+          min="0"
+          step="0.01"
+          value={i.additionalCharges || 0}
+          onChange={(e) =>
+            onChange({ ...i, additionalCharges: numeric(e.target.value) })
+          }
+        />
+      </label>
+      <label className="total-line">
+        Auto round off
+        <input
+          style={{ width: 18 }}
+          type="checkbox"
+          checked={i.autoRoundOff || false}
+          onChange={(e) => onChange({ ...i, autoRoundOff: e.target.checked })}
+        />
+      </label>
+      {t.roundOff !== undefined && t.roundOff !== 0 && (
+        <div className="total-line">
+          <span>Round off</span>
+          <span>{money(t.roundOff)}</span>
+        </div>
+      )}
       <div className="grand-total">
         <div>
           <span>Grand total</span>
@@ -101,7 +144,9 @@ export function TotalsPanel({
         <span>
           {i.taxMode === "non-gst"
             ? "Non-GST invoice"
-            : "GST is included in your item prices."}
+            : i.pricingMode === "exclusive"
+              ? "GST is added to your item prices."
+              : "GST is included in your item prices."}
         </span>
       </div>
     </section>

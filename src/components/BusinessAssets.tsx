@@ -15,7 +15,7 @@ export function BusinessAssets({
     <section className="card">
       <h2>Branding & authorisation</h2>
       <p>
-        Saved on this device with your seller details. PNG, JPG or WebP, up to 3
+        Use Save business details to sync these assets across devices. PNG, JPG or WebP, up to 3
         MB each.
       </p>
       {error && <p role="alert">{error}</p>}

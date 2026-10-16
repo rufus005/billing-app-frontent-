@@ -1,4 +1,4 @@
-import { BuyerDetailsFields } from "./BuyerDetailsFields";
+import { PartyModal } from "./PartyModal";
 import { useState } from "react";
 import type { BuyerRecord, BuyerPrice, Product } from "../utils/invoiceTypes";
 import { buyerApi, buyerPriceApi } from "../services/api";
@@ -55,8 +55,7 @@ export function BuyerManager({
   notify: (s: string) => void;
 }) {
   const [edit, setEdit] = useState<BuyerRecord | null>(null),
-    [search, setSearch] = useState(""),
-    [busy, setBusy] = useState(false);
+    [search, setSearch] = useState("");
   return (
     <>
       <div className="page-heading">
@@ -81,57 +80,15 @@ export function BuyerManager({
       </div>
       <section className="card">
         {edit ? (
-          <form
-            className="buyer-editor"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setBusy(true);
-              try {
-                await buyerApi.save(
-                  edit,
-                  buyers.some((b) => b.id === edit.id),
-                );
-                await reload();
-                setEdit(null);
-              } catch (e) {
-                notify((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
+          <PartyModal
+            buyer={edit}
+            exists={buyers.some((b) => b.id === edit.id)}
+            onClose={() => setEdit(null)}
+            onSaved={() => {
+              setEdit(null);
+              void reload().catch((e) => notify(e.message));
             }}
-          >
-            <h2>Buyer Details</h2>
-            <BuyerDetailsFields key={edit.id} buyer={edit} onChange={setEdit} />
-            <div className="form-grid buyer-extra-fields">
-              {(
-                [
-                  "email",
-                  "notes",
-                ] as const
-              ).map((k) => (
-                <Field
-                  key={k}
-                  label={k === "email" ? "Email (optional)" : "Notes (optional)"}
-                  value={edit[k]}
-                  onChange={(v) => setEdit({ ...edit, [k]: v })}
-                />
-              ))}
-              <label className="buyer-active">
-                <input
-                  type="checkbox"
-                  checked={edit.active}
-                  onChange={(e) =>
-                    setEdit({ ...edit, active: e.target.checked })
-                  }
-                />{" "}
-                Active
-              </label>
-            </div>
-            <div className="buyer-actions">
-              <button type="button" onClick={() => setEdit(null)}>Cancel</button>
-              <button className="primary" disabled={busy}>Save Buyer</button>
-            </div>
-          </form>
+          />
         ) : (
           <>
             <Field

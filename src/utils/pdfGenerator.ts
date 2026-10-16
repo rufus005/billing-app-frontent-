@@ -52,7 +52,7 @@ export async function generatePDF(
     s.logo,
     qr,
     s.seal,
-    `${import.meta.env.BASE_URL}images/authorised-signature.png`,
+    s.signature || `${import.meta.env.BASE_URL}images/authorised-signature.png`,
   ];
   const images = await Promise.all(
     sources.map((source) => (source ? loadPaymentImage(source) : null)),
@@ -158,19 +158,32 @@ export async function generatePDF(
   table(
     i.items.map((r, n) => [
       n + 1,
-      r.name,
+      r.name + (r.discountPercent ? ` (discount ${r.discountPercent}%)` : ""),
       r.hsn,
       r.qty.toFixed(2),
       (r.finalPrice ?? r.price).toFixed(2),
       `${i.taxMode === "non-gst" ? 0 : (r.gstPercent ?? i.gst)}%`,
       (
-        Math.round((r.qty * (r.finalPrice ?? r.price) + Number.EPSILON) * 100) /
-        100
+        Math.round(
+          (r.qty *
+            (r.finalPrice ?? r.price) *
+            (1 - (r.discountPercent || 0) / 100) +
+            Number.EPSILON) *
+            100,
+        ) / 100
       ).toFixed(2),
     ]),
     {
       head: [
-        ["#", "Item", "HSN", "Qty", "Rate (₹)", "Tax incl.", "Amount (₹)"],
+        [
+          "#",
+          "Item",
+          "HSN",
+          "Qty",
+          "Rate (₹)",
+          i.pricingMode === "exclusive" ? "GST" : "Tax incl.",
+          "Amount (₹)",
+        ],
       ],
       headStyles: {
         fillColor: [245, 245, 245],
@@ -188,7 +201,7 @@ export async function generatePDF(
       },
     },
   );
-  const t = calculate(i),
+  const t = i.totals || calculate(i),
     p = paymentSummary(i);
   const sums: [string, string][] = [
     ["Total Qty", String(t.qty)],
@@ -206,6 +219,12 @@ export async function generatePDF(
     ]),
     ...(taxRows(i).length
       ? [["Total Tax", money(t.tax)] as [string, string]]
+      : []),
+    ...(i.additionalCharges
+      ? [["Additional Charges", money(i.additionalCharges)] as [string, string]]
+      : []),
+    ...(t.roundOff
+      ? [["Round Off", money(t.roundOff)] as [string, string]]
       : []),
     ["Grand Total", money(t.grand)],
     [
@@ -235,7 +254,15 @@ export async function generatePDF(
             },
           ]
         : []),
-      ...(index === 0 ? [{ content: "", rowSpan: sums.length, styles: { cellWidth: 2, lineWidth: 0, fillColor: 255 } }] : []),
+      ...(index === 0
+        ? [
+            {
+              content: "",
+              rowSpan: sums.length,
+              styles: { cellWidth: 2, lineWidth: 0, fillColor: 255 },
+            },
+          ]
+        : []),
       {
         content: label + ":",
         styles: { fontStyle: index >= sums.length - 3 ? "bold" : "normal" },
@@ -310,8 +337,11 @@ export async function generatePDF(
         }
         doc.setFont("Invoice", "bold");
         doc.setFontSize(format === "a4" ? 8 : 6.5);
-        const company = "DYNAMIC UNIVERSAL MARKETING";
-        const captionSize = Math.min(format === "a4" ? 8 : 7, (w - 6) / doc.getTextWidth(company) * doc.getFontSize());
+        const company = s.name;
+        const captionSize = Math.min(
+          format === "a4" ? 8 : 7,
+          ((w - 6) / doc.getTextWidth(company)) * doc.getFontSize(),
+        );
         doc.setFontSize(captionSize);
         const caption = ["AUTHORISED SIGNATORY FOR", company];
         doc.text(caption, x + w / 2, top + 21, { align: "center" });

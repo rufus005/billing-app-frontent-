@@ -140,20 +140,27 @@ export function InvoiceDetailsForm({
         Enter the total confirmed receipts, including earlier payments. Saving
         replaces this total; scanning a QR does not confirm payment.
       </p>
-      <Field
-        label="Received amount"
-        type="number"
-        value={i.receivedAmount === undefined ? "" : String(i.receivedAmount)}
-        onChange={(v) =>
-          onChange({
-            ...i,
-            receivedAmount:
-              v === ""
-                ? undefined
-                : Math.min(calculate(i).grand, Math.max(0, Number(v) || 0)),
-          })
-        }
-      />
+      {i.payments?.length ? (
+        <p className="note">
+          Receipts are locked to the payment history. Use Record Payment in
+          Sales.
+        </p>
+      ) : (
+        <Field
+          label="Received amount"
+          type="number"
+          value={i.receivedAmount === undefined ? "" : String(i.receivedAmount)}
+          onChange={(v) =>
+            onChange({
+              ...i,
+              receivedAmount:
+                v === ""
+                  ? undefined
+                  : Math.min(calculate(i).grand, Math.max(0, Number(v) || 0)),
+            })
+          }
+        />
+      )}
       <label className="field">
         Shipping address
         <select
@@ -222,6 +229,11 @@ export function SellerForm({
           gstin: "GSTIN",
           phone: "Phone number",
           email: "Email",
+          pan: "PAN",
+          website: "Website",
+          pin: "PIN Code",
+          city: "City / District",
+          state: "State",
           bank: "Bank name",
           branch: "Bank branch",
           account: "Account number",

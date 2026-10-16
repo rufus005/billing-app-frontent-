@@ -1,4 +1,9 @@
 export interface Seller {
+  pan?: string;
+  website?: string;
+  pin?: string;
+  city?: string;
+  state?: string;
   email?: string;
   logo?: string;
   signature?: string;
@@ -14,6 +19,7 @@ export interface Seller {
   ifsc: string;
 }
 export interface BusinessPaymentSettings {
+  qrCodeWarning?: string;
   qrMode?: "dynamic" | "static";
   upiId: string;
   payeeName?: string;
@@ -37,6 +43,20 @@ export interface ProductVariant {
   image?: string;
 }
 export interface BuyerRecord extends Buyer {
+  partyType?: "Customer" | "Supplier";
+  pan?: string;
+  openingBalance?: number;
+  openingBalanceType?: "To Collect" | "To Pay";
+  addressParts?: { area: string; pin: string; city: string; state: string };
+  shippingAddress?: string;
+  creditLimit?: number;
+  creditDays?: number;
+  contactName?: string;
+  contactPhone?: string;
+  bankName?: string;
+  bankAccount?: string;
+  bankIfsc?: string;
+  customFields?: string;
   id: string;
   email: string;
   notes: string;
@@ -66,6 +86,7 @@ export interface Product {
   variants?: ProductVariant[];
 }
 export interface LineItem {
+  discountPercent?: number;
   finalPrice?: number;
   normalPriceAtSale?: number;
   buyerPriceAtSale?: number;
@@ -84,7 +105,19 @@ export interface LineItem {
   price: number;
 }
 export type SaleStatus = "Draft" | "Completed" | "Cancelled";
+export interface PaymentRecord {
+  id: string;
+  amount: number;
+  date: string;
+  method: "Cash" | "UPI" | "Bank Transfer";
+  reference: string;
+}
 export interface Invoice {
+  pricingMode?: "inclusive" | "exclusive";
+  additionalCharges?: number;
+  autoRoundOff?: boolean;
+  payments?: PaymentRecord[];
+  paymentOpeningReceived?: number;
   dueDate?: string;
   shipTo?: Buyer;
   taxMode?: "gst" | "non-gst";

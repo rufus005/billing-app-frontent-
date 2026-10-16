@@ -1,3 +1,4 @@
+import { RecordPayment } from "./RecordPayment";
 import { paymentSummary } from "../utils/invoicePresentation";
 import { useEffect, useState } from "react";
 import type { Invoice } from "../utils/invoiceTypes";
@@ -12,6 +13,7 @@ export function SalesManager({
   reload: () => Promise<void>;
   notify: (s: string) => void;
 }) {
+  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
   const [status, setStatus] = useState("");
   const [paymentStatus, setPaymentStatus] = useState("");
   const [error, setError] = useState("");
@@ -75,6 +77,7 @@ export function SalesManager({
   }
   return (
     <>
+      {paymentInvoice && <RecordPayment invoice={paymentInvoice} close={() => setPaymentInvoice(null)} saved={() => { setPaymentInvoice(null); setRevision(v => v + 1); notify("Payment recorded."); }} />}
       <div className="page-heading">
         <h1>Sales</h1>
       </div>
@@ -176,9 +179,10 @@ export function SalesManager({
                         : money(paymentSummary(i).balance!)}
                     </small>
                   </td>
-                  <td>{money(calculate(i).grand)}</td>
+                  <td>{money(i.totals?.grand ?? calculate(i).grand)}</td>
                   <td>
                     <button onClick={() => open(i)}>Preview / edit</button>
+                    {i.status === "Completed" && <button onClick={() => setPaymentInvoice(i)}>Record Payment / history</button>}
                     <button
                       onClick={async () => {
                         if (

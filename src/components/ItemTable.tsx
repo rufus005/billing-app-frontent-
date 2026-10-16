@@ -20,6 +20,8 @@ export function ItemTable({
             <th>HSN CODE</th>
             <th>BILL QTY</th>
             <th>PRICE (₹)</th>
+            <th>DISCOUNT %</th>
+            <th>GST %</th>
             <th className="right">AMOUNT</th>
             <th />
           </tr>
@@ -70,8 +72,47 @@ export function ItemTable({
                   }
                 />
               </td>
+              <td>
+                <input
+                  aria-label={`Item ${n + 1} discount`}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={r.discountPercent || 0}
+                  onChange={(e) =>
+                    edit(r.id, {
+                      discountPercent: Math.min(100, numeric(e.target.value)),
+                    })
+                  }
+                />
+              </td>
+              <td>
+                <input
+                  aria-label={`Item ${n + 1} GST`}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={r.gstPercent ?? ""}
+                  placeholder="Default"
+                  onChange={(e) =>
+                    edit(r.id, {
+                      gstPercent:
+                        e.target.value === ""
+                          ? undefined
+                          : Math.min(100, numeric(e.target.value)),
+                    })
+                  }
+                />
+              </td>
               <td className="right amount">
-                {money(round(r.qty * (r.finalPrice ?? r.price)))}
+                {money(
+                  round(
+                    round(r.qty * (r.finalPrice ?? r.price)) *
+                      (1 - (r.discountPercent || 0) / 100),
+                  ),
+                )}
               </td>
               <td>
                 <button

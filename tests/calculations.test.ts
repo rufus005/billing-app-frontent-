@@ -60,3 +60,9 @@ describe("invoice financial calculations", () => {
     expect(amountToWords(99.999)).toBe("Rupees One Hundred Only");
   });
 });
+
+test('optional exclusive pricing and discounts use the same totals as the API', () => {
+  const invoice = { ...newInvoice(), pricingMode: 'exclusive' as const, additionalCharges: 10.25, autoRoundOff: true, items: [{id:'exclusive',name:'Item',hsn:'123',qty:2,price:100,discountPercent:10,gstPercent:18}] };
+  const total = calculate(invoice);
+  expect(total.taxable).toBe(180); expect(total.tax).toBe(32.4); expect(total.grand).toBe(223); expect(total.roundOff).toBe(0.35);
+});

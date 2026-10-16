@@ -235,7 +235,7 @@ try {
       }).replace(/\s+/g, " ");
       assert.match(
         text,
-        /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARKETING/,
+        /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARKTING/,
       );
       assert.doesNotMatch(text, /Special Discount|Return Amount/);
       assert.match(text, /Rupees Eighteen Thousand Only/);

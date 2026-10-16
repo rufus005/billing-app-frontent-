@@ -95,3 +95,22 @@ function parsePaymentSettings(value: unknown): BusinessPaymentSettings {
   }
   return data;
 }
+
+export const businessProfileApi = {
+  get: () =>
+    api<import("../utils/invoiceTypes").Seller | null>("/business-profile"),
+  save: (seller: import("../utils/invoiceTypes").Seller) =>
+    api<import("../utils/invoiceTypes").Seller>("/business-profile", "PUT", {
+      ...seller,
+      qrMode: seller.qrMode ?? null,
+    }),
+};
+export const recordPayment = (
+  id: string,
+  payment: import("../utils/invoiceTypes").PaymentRecord,
+) =>
+  api<Invoice>(
+    "/invoices/" + encodeURIComponent(id) + "/payments",
+    "POST",
+    payment,
+  );

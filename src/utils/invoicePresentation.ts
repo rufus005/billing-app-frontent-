@@ -22,7 +22,7 @@ export function invoiceFilename(invoice: Invoice): string {
 }
 
 export function paymentSummary(invoice: Invoice) {
-  const total = calculate(invoice).grand;
+  const total = invoice.totals?.grand ?? calculate(invoice).grand;
   const received = invoice.receivedAmount;
   if (received === undefined || !Number.isFinite(received) || received < 0)
     return { received: null, balance: null, status: "Unknown" };

@@ -1,5 +1,15 @@
+import { PartyModal } from "../components/PartyModal";
+import { Dashboard } from "../components/Dashboard";
+import { businessProfileApi } from "../services/api";
+import { LayoutDashboard } from "lucide-react";
 import { BusinessAssets } from "../components/BusinessAssets";
-import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type SetStateAction,
+} from "react";
 import {
   ReceiptText,
   Package,
@@ -64,11 +74,64 @@ export default function BillingPage() {
   const [seller, setSeller] = useState<Seller>(() =>
     read(keys.seller, defaultSeller),
   );
+  const [savedQrMode, setSavedQrMode] = useState<Seller["qrMode"]>();
+  const [profileReady, setProfileReady] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  useEffect(() => {
+    businessProfileApi
+      .get()
+      .then((value) => {
+        if (value) {
+          setSeller((old) => ({ ...old, ...value }));
+          setSavedQrMode(value.qrMode);
+        }
+        setProfileReady(true);
+      })
+      .catch((e) => setProfileError(e.message));
+  }, []);
+  const saveProfile = async () => {
+    setProfileBusy(true);
+    try {
+      const value = await businessProfileApi.save(seller);
+      setSeller(value);
+      setSavedQrMode(value.qrMode);
+      setProfileError("");
+      setNotice("Business details saved to MongoDB.");
+    } catch (e) {
+      setProfileError((e as Error).message);
+    } finally {
+      setProfileBusy(false);
+    }
+  };
   const [paperSize, setPaperSize] = useState<"a4" | "a5">("a5");
   const [products, setProducts] = useState<Product[]>(() => []);
-  const [invoice, setInvoice] = useState<Invoice>(() =>
+  const [invoice, setInvoiceState] = useState<Invoice>(() =>
     read(keys.working, newInvoice()),
   );
+  const setInvoice = (action: SetStateAction<Invoice>) =>
+    setInvoiceState((old) => {
+      const next = typeof action === "function" ? action(old) : action;
+      // Keep saved historical totals until the user edits financial inputs.
+      const financial = (i: Invoice) =>
+        JSON.stringify([
+          i.items,
+          i.discount,
+          i.returns,
+          i.gst,
+          i.taxMode,
+          i.pricingMode,
+          i.additionalCharges,
+          i.autoRoundOff,
+        ]);
+      if (
+        next.id === old.id &&
+        next.revision === old.revision &&
+        financial(next) !== financial(old)
+      )
+        return { ...next, totals: undefined };
+      return next;
+    });
   const [buyers, setBuyers] = useState<BuyerRecord[]>([]),
     [rates, setRates] = useState<BuyerPrice[]>([]);
   const [pendingBuyer, setPendingBuyer] = useState<string | null>(null),
@@ -109,6 +172,14 @@ export default function BillingPage() {
       setInvoice((old) => ({
         ...old,
         buyerId: id || undefined,
+        shipTo: buyer?.shippingAddress
+          ? {
+              name: buyer.name,
+              mobile: buyer.mobile,
+              gstin: buyer.gstin,
+              address: buyer.shippingAddress,
+            }
+          : undefined,
         buyer: buyer
           ? {
               name: buyer.name,
@@ -172,6 +243,7 @@ export default function BillingPage() {
       setBusy(false);
     }
   };
+  const [newParty, setNewParty] = useState(false);
   const [page, setPage] = useState("billing");
   const [picker, setPicker] = useState(false),
     [preview, setPreview] = useState(false),
@@ -228,6 +300,7 @@ export default function BillingPage() {
     try {
       const value = await businessPaymentApi.get();
       setPayment(value);
+      if (value.qrCodeWarning) setPaymentError(value.qrCodeWarning);
       setSavedPayment(value);
       setPaymentLoaded(true);
       setPaymentUnconfirmed(false);
@@ -395,7 +468,7 @@ export default function BillingPage() {
       const doc = await generatePDF(
         invoice,
         invoice.seller || seller,
-        { ...confirmedPayment, qrMode: seller.qrMode },
+        { ...confirmedPayment, qrMode: savedQrMode },
         paperSize,
       );
       if (print) {
@@ -431,6 +504,33 @@ export default function BillingPage() {
   };
   return (
     <>
+      {newParty && (
+        <PartyModal
+          onClose={() => setNewParty(false)}
+          onSaved={(buyer) => {
+            setNewParty(false);
+            setInvoice((old) => ({
+              ...old,
+              buyerId: buyer.id,
+              buyer: {
+                name: buyer.name,
+                mobile: buyer.mobile,
+                address: buyer.address,
+                gstin: buyer.gstin,
+              },
+              shipTo: buyer.shippingAddress
+                ? {
+                    name: buyer.name,
+                    mobile: buyer.mobile,
+                    address: buyer.shippingAddress,
+                    gstin: buyer.gstin,
+                  }
+                : undefined,
+            }));
+            void reload().catch((e) => setNotice(e.message));
+          }}
+        />
+      )}
       <div className="app-shell">
         <aside className="sidebar">
           <a
@@ -451,6 +551,7 @@ export default function BillingPage() {
           <div className="workspace-label">WORKSPACE</div>
           <nav>
             {[
+              { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
               { id: "billing", icon: ReceiptText, label: "Create invoice" },
               { id: "sales", icon: ReceiptText, label: "Sales" },
               { id: "buyers", icon: UserRound, label: "Buyers" },
@@ -500,6 +601,7 @@ export default function BillingPage() {
                 {
                   (
                     {
+                      dashboard: "Dashboard",
                       billing: "Create invoice",
                       products: "Products",
                       buyers: "Buyers",
@@ -536,7 +638,16 @@ export default function BillingPage() {
                 </button>
               </p>
             )}
-            {page === "billing" ? (
+            {page === "dashboard" ? (
+              <Dashboard
+                products={products}
+                navigate={setPage}
+                open={(i) => {
+                  setInvoice(i);
+                  setPage("billing");
+                }}
+              />
+            ) : page === "billing" ? (
               <>
                 <div className="page-heading">
                   <div>
@@ -595,6 +706,12 @@ export default function BillingPage() {
                           Who are you billing?
                         </span>
                       </div>
+                      <button
+                        className="text-button"
+                        onClick={() => setNewParty(true)}
+                      >
+                        <Plus size={15} /> Add New Buyer
+                      </button>
                       <BuyerSelector
                         buyers={buyers}
                         value={invoice.buyerId}
@@ -842,17 +959,52 @@ export default function BillingPage() {
                   </div>
                   <span className="tag">
                     <Check size={14} />
-                    Saved automatically
+                    Saved locally until you save business details
                   </span>
                 </div>
+                <section className="card profile-save">
+                  <div>
+                    <h2>Business profile</h2>
+                    <p>
+                      Save seller details, bank information, assets and QR mode
+                      for every device.
+                    </p>
+                  </div>
+                  <button
+                    className="primary"
+                    disabled={!profileReady || profileBusy}
+                    onClick={saveProfile}
+                  >
+                    {profileBusy ? "Saving…" : "Save business details"}
+                  </button>
+                  {profileError && (
+                    <p role="alert">
+                      {profileError}
+                      <button
+                        onClick={() =>
+                          businessProfileApi
+                            .get()
+                            .then((value) => {
+                              if (value)
+                                setSeller((old) => ({ ...old, ...value }));
+                              setProfileReady(true);
+                              setProfileError("");
+                            })
+                            .catch((e) => setProfileError(e.message))
+                        }
+                      >
+                        Retry profile
+                      </button>
+                    </p>
+                  )}
+                </section>
                 <section className="card">
                   <h2>Local data backup and import</h2>
                   <p>
                     Existing browser data is preserved. Import copies products
-                    Existing browser data is preserved. Import copies products
                     and saved sales into an empty database, keeping current
-                    stock quantities. Seller details and working drafts stay on
-                    this device; UPI payment settings are saved in MongoDB.
+                    stock quantities. Working drafts stay on this device; saved
+                    business and UPI settings are stored in MongoDB.
                   </p>
                   <button
                     onClick={() => {
@@ -1168,7 +1320,7 @@ export default function BillingPage() {
               format={paperSize}
               invoice={invoice}
               seller={invoice.seller || seller}
-              payment={{ ...savedPayment, qrMode: seller.qrMode }}
+              payment={{ ...savedPayment, qrMode: savedQrMode }}
             />
           </div>
           <footer>
@@ -1191,7 +1343,7 @@ export default function BillingPage() {
           format={paperSize}
           invoice={invoice}
           seller={invoice.seller || seller}
-          payment={{ ...savedPayment, qrMode: seller.qrMode }}
+          payment={{ ...savedPayment, qrMode: savedQrMode }}
         />
       </div>
     </>
