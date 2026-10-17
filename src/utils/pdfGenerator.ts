@@ -92,7 +92,7 @@ export async function generatePDF(
   ) => {
     autoTable(doc, {
       startY: y,
-      margin: { top: 13, bottom: 12, left: margin, right: margin },
+      margin: { top: margin, bottom: margin, left: margin, right: margin },
       theme: "plain",
       styles,
       body,
@@ -226,10 +226,10 @@ export async function generatePDF(
       bodyStyles: { lineWidth: { bottom: 0.1 }, lineColor: 190 },
       columnStyles: {
         0: { cellWidth: width * 0.32 },
-        1: { cellWidth: width * 0.12 },
-        2: { cellWidth: width * 0.1 },
+        1: { cellWidth: width * 0.12, halign: "center" },
+        2: { cellWidth: width * 0.1, halign: "center" },
         3: { cellWidth: width * 0.15, halign: "right" },
-        4: { cellWidth: width * 0.14, halign: "right" },
+        4: { cellWidth: width * 0.14, halign: "center" },
         5: { cellWidth: width * 0.17, halign: "right" },
       },
     },
@@ -267,12 +267,20 @@ export async function generatePDF(
     ["Account Holder", s.name],
     ["Account Number", s.account],
     ["IFSC", s.ifsc],
-    ...(payment.payeeName ? [["UPI Payee Name", payment.payeeName]] : []),
-    ...(payment.upiId ? [["UPI ID", payment.upiId]] : []),
   ];
-  // A modest item area follows the reference without forcing blank pages for long tables.
+  const paymentDetails = [
+    payment.payeeName && `UPI Payee Name: ${payment.payeeName}`,
+    payment.upiId && `UPI ID: ${payment.upiId}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (!qr) {
+    if (payment.payeeName)
+      bankRows.push(["UPI Payee Name", payment.payeeName]);
+    if (payment.upiId) bankRows.push(["UPI ID", payment.upiId]);
+  }
   if (doc.getNumberOfPages() === 1)
-    y = Math.max(y, itemTop + (format === "a4" ? 45 : 30));
+    y = Math.max(y, itemTop + (format === "a4" ? 36 : 24));
   table(
     [
       [
@@ -299,7 +307,7 @@ export async function generatePDF(
   const bankWidth = width * 0.48;
   doc.setFont("Invoice", "normal");
   doc.setFontSize(styles.fontSize);
-  const labelWidth = bankWidth * 0.39;
+  const labelWidth = bankWidth * 0.37;
   const lineHeight = styles.fontSize * 0.3528 * 1.15;
   const bankHeight =
     7 +
@@ -315,24 +323,39 @@ export async function generatePDF(
         2.4,
       0,
     ) +
-    (qr ? 38 : 0);
+    (qr ? 32 : 0);
+  const wordsText = `Total Amount (in words)\n${amountToWords(t.grand)}`;
+  const wordsHeight =
+    doc.splitTextToSize(wordsText, width * 0.52 - 2.4).length * lineHeight +
+    2.4;
+  const footerText = i.declaration
+    ? `Declaration\n${i.declaration}`
+    : "";
+  doc.setFontSize(7);
+  const declarationHeight = footerText
+    ? doc.splitTextToSize(footerText, width - 2.4).length *
+      (7 * 0.3528 * 1.15) +
+    2.4
+    : 0;
+  doc.setFontSize(styles.fontSize);
+  const signatureHeight = 34;
   const rightHeight =
-    sums.length * (styles.fontSize * 0.3528 * 1.15 + 2.4) + 42;
-  if (
-    y + Math.max(bankHeight, rightHeight) >
-    doc.internal.pageSize.getHeight() - 12
-  ) {
+    sums.length * (lineHeight + 2.4) +
+    5 +
+    wordsHeight +
+    3 +
+    signatureHeight +
+    declarationHeight;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  if (y + Math.max(bankHeight, rightHeight) > pageHeight - margin) {
     doc.addPage();
-    y = 13;
+    y = margin + 3;
   }
   const footerTop = y;
   table(
     [
       [{ content: "BANK DETAILS", colSpan: 2, styles: { fontStyle: "bold" } }],
       ...bankRows.map(([label, value]) => [label + ":", value || "—"]),
-      ...(qr
-        ? [[{ content: "", colSpan: 2, styles: { minCellHeight: 38 } }]]
-        : []),
     ],
     {
       tableWidth: bankWidth,
@@ -343,15 +366,45 @@ export async function generatePDF(
       margin: {
         left: margin,
         right: margin + width - bankWidth,
-        top: 13,
-        bottom: 12,
-      },
-      didDrawCell: (data) => {
-        if (qr && data.row.index === bankRows.length + 1)
-          drawImage(1, data.cell.x + 1, data.cell.y + 3, 32);
+        top: margin,
+        bottom: margin,
       },
     },
   );
+  if (qr) {
+    y += 2;
+    table(
+      [
+        [
+          { content: paymentDetails || " " },
+          { content: "", styles: { minCellHeight: 28 } },
+        ],
+      ],
+      {
+        tableWidth: bankWidth,
+        columnStyles: {
+          0: { cellWidth: bankWidth - 29 },
+          1: { cellWidth: 29 },
+        },
+        margin: {
+          left: margin,
+          right: margin + width - bankWidth,
+          top: margin,
+          bottom: margin,
+        },
+        didDrawCell: (data) => {
+          if (data.column.index !== 1) return;
+          const box = 25;
+          drawImage(
+            1,
+            data.cell.x + (data.cell.width - box) / 2,
+            data.cell.y + (data.cell.height - box) / 2,
+            box,
+          );
+        },
+      },
+    );
+  }
   const bankBottom = y;
   y = footerTop;
   table(
@@ -363,82 +416,87 @@ export async function generatePDF(
       margin: {
         left: margin + width * 0.52,
         right: margin,
-        top: 13,
-        bottom: 12,
+        top: margin,
+        bottom: margin,
       },
       columnStyles: {
         0: { cellWidth: width * 0.28 },
-        1: { cellWidth: width * 0.2 },
+        1: { cellWidth: width * 0.2, halign: "right" },
       },
     },
   );
+  y += 5;
   table([
     [
       { content: "", styles: { cellWidth: width * 0.48 } },
       {
-        content: `Total Amount (in words)\n${amountToWords(t.grand)}`,
+        content: wordsText,
         styles: { halign: "right" },
       },
     ],
   ]);
-  table(
-    [
-      [
-        {
-          content: "",
-          styles: { cellWidth: width * 0.48 },
-        },
-        { content: "", styles: { minCellHeight: 29 } },
-      ],
-    ],
-    {
-      pageBreak: "avoid",
-      didDrawCell: (data) => {
-        if (data.column.index !== 1) return;
-        const x = data.cell.x,
-          top = data.cell.y,
-          w = data.cell.width;
-        if (s.seal) drawImage(2, x + 2, top + 1, 16);
-        const img = images[3];
-        if (img) {
-          const h = 15,
-            imageWidth = Math.min(
-              w - 8,
-              (h * img.naturalWidth) / img.naturalHeight,
-            );
-          const imageHeight =
-            (imageWidth * img.naturalHeight) / img.naturalWidth;
-          const canvas = document.createElement("canvas");
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          canvas.getContext("2d")!.drawImage(img, 0, 0);
-          doc.addImage(
-            canvas.toDataURL("image/png"),
-            "PNG",
-            x + w - imageWidth - 2,
-            top + 2,
-            imageWidth,
-            imageHeight,
-          );
-        }
-        doc.setFont("Invoice", "bold");
-        doc.setFontSize(format === "a4" ? 8 : 6.5);
-        const company = s.name;
-        const captionSize = Math.min(
-          format === "a4" ? 8 : 7,
-          ((w - 6) / doc.getTextWidth(company)) * doc.getFontSize(),
-        );
-        doc.setFontSize(captionSize);
-        const caption = ["AUTHORISED SIGNATORY FOR", company];
-        doc.text(caption, x + w - 2, top + 21, { align: "right" });
-      },
-    },
-  );
   y = Math.max(y, bankBottom);
-  if (i.declaration)
-    table([
-      [{ content: `Declaration\n${i.declaration}`, styles: { fontSize: 7 } }],
-    ]);
+  const footerHeight = signatureHeight + declarationHeight;
+  y = Math.max(y + 3, pageHeight - margin - footerHeight);
+  const footerRows: RowInput[] = [
+    [
+      { content: "", styles: { cellWidth: width * 0.48 } },
+      { content: "", styles: { minCellHeight: 29 } },
+    ],
+    ...(i.declaration
+      ? [
+          [
+            {
+              content: footerText,
+              colSpan: 2,
+              styles: { fontSize: 7 },
+            },
+          ],
+        ]
+      : []),
+  ];
+  table(footerRows, {
+    pageBreak: "avoid",
+    didDrawCell: (data) => {
+      if (data.row.index !== 0 || data.column.index !== 1) return;
+      const x = data.cell.x,
+        top = data.cell.y,
+        w = data.cell.width;
+      if (s.seal) drawImage(2, x + 2, top + 1, 16);
+      const img = images[3];
+      if (img) {
+        const h = 15,
+          imageWidth = Math.min(
+            w - 8,
+            (h * img.naturalWidth) / img.naturalHeight,
+          );
+        const imageHeight =
+          (imageWidth * img.naturalHeight) / img.naturalWidth;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d")!.drawImage(img, 0, 0);
+        doc.addImage(
+          canvas.toDataURL("image/png"),
+          "PNG",
+          x + w - imageWidth - 2,
+          top + 2,
+          imageWidth,
+          imageHeight,
+        );
+      }
+      doc.setFont("Invoice", "bold");
+      doc.setFontSize(format === "a4" ? 8 : 6.5);
+      const company = s.name;
+      const captionSize = Math.min(
+        format === "a4" ? 8 : 7,
+        ((w - 6) / doc.getTextWidth(company)) * doc.getFontSize(),
+      );
+      doc.setFontSize(captionSize);
+      const caption = ["AUTHORISED SIGNATORY FOR", company];
+      doc.text(caption, x + w - 2, top + 21, { align: "right" });
+    },
+  });
   const pages = doc.getNumberOfPages();
   for (let n = 1; n <= pages; n++) {
     doc.setPage(n);
