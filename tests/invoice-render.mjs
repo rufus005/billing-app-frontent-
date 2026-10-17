@@ -140,8 +140,9 @@ try {
     "PASS real browser storage: migration, 6 MB snapshot, image deduplication, reload, failed-write preservation",
     storageResult.usage,
   );
-  for (const format of ["a5", "a4"])
+  for (const format of ["a4", "a5"])
     for (const scenario of [
+      "reference",
       "branding",
       "partial",
       "zero",
@@ -230,7 +231,7 @@ try {
             )?.data;
           }
           const seller = { ...defaultSeller };
-          if (scenario === "branding") {
+          if (scenario === "branding" || scenario === "reference") {
             const canvas = document.createElement("canvas");
             canvas.width = 240;
             canvas.height = 180;
@@ -258,6 +259,40 @@ try {
             payment.upiId = "long.existing.payment.identifier@bank";
             payment.qrCode = source;
             payment.qrMode = "static";
+          }
+          if (scenario === "reference") {
+            Object.assign(seller, {
+              name: "DYNAMIC UNIVERSAL MARKETING",
+              address:
+                "NO .13 , Ground floor,Subbaraju Layout , Near Gokula Nandana Residency , doddakallasandra , Kanakapura Main Road , Bengaluru, Karnataka, 560062",
+              pan: "AKFPU1710L",
+              email: "marketingdynamic81@gmail.com",
+              website: "https://www.dynamicshoerack.in/",
+              bank: "Axis Bank",
+              branch: "KONANAKUNTE",
+            });
+            Object.assign(i, {
+              number: "3227",
+              date: "2026-09-26",
+              time: "",
+              buyer: {
+                name: "SRI KRISHNA",
+                address: "BOMMASANDRA JIGANI, Bangalore, Karnataka, 560099",
+                mobile: "9845336660",
+                gstin: "",
+              },
+              shipTo: {
+                name: "SRI KRISHNA",
+                address: "BOMMASANDRA, Bangalore, Karnataka, 560099",
+                mobile: "",
+                gstin: "",
+              },
+            });
+            i.items[0].name = "J4 SHOE RACK";
+            i.items[0].color = "BROWN";
+            i.items[0].hsn = "7323";
+            payment.payeeName = "";
+            payment.upiId = "sample@bank";
           }
           const doc = await generatePDF(i, seller, payment, format);
           window.renderInvoice({
@@ -325,6 +360,18 @@ try {
             .getImageData(0, 0, c.width, c.height).data;
           pdfQr ||= jsQR(rgba, c.width, c.height)?.data;
           const text = await p.getTextContent();
+          if (pdf.numPages === 1 && p.view[3] > 800) {
+            const signature = text.items.find(
+              (item) => item.str === "AUTHORISED SIGNATORY FOR",
+            );
+            if (!signature || signature.transform[5] < 100)
+              throw Error(
+                "Signature must follow the summary, not sit at the page edge",
+              );
+            const upi = text.items.find((item) => item.str === "UPI ID:");
+            if (upi && upi.transform[4] > p.view[2] / 2)
+              throw Error("UPI details must stay in the left bank column");
+          }
           for (const item of text.items)
             if ("str" in item && item.str.trim()) {
               const x = item.transform[4],
@@ -359,7 +406,10 @@ try {
       const text = execFileSync("pdftotext", [path + ".pdf", "-"], {
         encoding: "utf8",
       }).replace(/\s+/g, " ");
-      assert.match(text, /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARKTING/);
+      assert.match(
+        text,
+        /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARK(?:E)?TING/,
+      );
       assert.doesNotMatch(text, /Special Discount|Return Amount/);
       assert.match(text, /Rupees Eighteen Thousand Only/);
       if (scenario === "non-gst") {
