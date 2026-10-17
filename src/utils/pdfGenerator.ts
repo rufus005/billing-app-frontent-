@@ -116,6 +116,7 @@ export async function generatePDF(
     .filter(Boolean)
     .filter((v) => !s.address.toLowerCase().includes(v!.toLowerCase()))
     .join(", ");
+  const logoBox = format === "a4" ? 30 : 23;
   const sellerDetails = [
     s.address,
     location,
@@ -131,10 +132,11 @@ export async function generatePDF(
   ]
     .filter(Boolean)
     .join("\n");
+  const headerTop = y;
+  const headerLeft = margin + (s.logo ? logoBox + 4 : 0);
   table(
     [
       [
-        { content: "", rowSpan: 2, styles: { cellWidth: s.logo ? 35 : 0.1 } },
         {
           content: s.name,
           styles: { fontSize: format === "a4" ? 15 : 11, fontStyle: "bold" },
@@ -142,13 +144,12 @@ export async function generatePDF(
       ],
       [{ content: sellerDetails }],
     ],
-    {
-      didDrawCell: (data) => {
-        if (data.column.index === 0 && data.row.index === 0 && s.logo)
-          drawImage(0, data.cell.x, data.cell.y, 31);
-      },
-    },
+    { margin: { left: headerLeft, right: margin, top: 13, bottom: 12 } },
   );
+  if (s.logo) {
+    drawImage(0, margin + 1, headerTop + 1, logoBox);
+    y = Math.max(y, headerTop + logoBox + 2);
+  }
   y += 2;
   doc.setLineWidth(1);
   doc.line(margin, y, margin + width, y);
@@ -261,9 +262,17 @@ export async function generatePDF(
     ],
     ["Balance Amount", p.balance === null ? "Not recorded" : money(p.balance)],
   ];
-  const bankText = `BANK DETAILS\nName: ${s.name}\nIFSC: ${s.ifsc}\nAccount No: ${s.account}\nBank: ${s.bank}${s.branch ? `, ${s.branch}` : ""}${payment.payeeName ? `\nUPI Payee Name: ${payment.payeeName}` : ""}${payment.upiId ? `\nUPI ID: ${payment.upiId}` : ""}`;
+  const bankRows = [
+    ["Bank Name", [s.bank, s.branch].filter(Boolean).join(", ")],
+    ["Account Holder", s.name],
+    ["Account Number", s.account],
+    ["IFSC", s.ifsc],
+    ...(payment.payeeName ? [["UPI Payee Name", payment.payeeName]] : []),
+    ...(payment.upiId ? [["UPI ID", payment.upiId]] : []),
+  ];
   // A modest item area follows the reference without forcing blank pages for long tables.
-  if (doc.getNumberOfPages() === 1) y = Math.max(y, itemTop + (format === "a4" ? 45 : 30));
+  if (doc.getNumberOfPages() === 1)
+    y = Math.max(y, itemTop + (format === "a4" ? 45 : 30));
   table(
     [
       [
@@ -288,10 +297,25 @@ export async function generatePDF(
     },
   );
   const bankWidth = width * 0.48;
+  doc.setFont("Invoice", "normal");
   doc.setFontSize(styles.fontSize);
-  const bankLines = doc.splitTextToSize(bankText, bankWidth - 4).length;
+  const labelWidth = bankWidth * 0.39;
+  const lineHeight = styles.fontSize * 0.3528 * 1.15;
   const bankHeight =
-    bankLines * styles.fontSize * 0.3528 * 1.15 + 4 + (qr ? 26 : 0);
+    7 +
+    bankRows.reduce(
+      (height, [label, value]) =>
+        height +
+        Math.max(
+          doc.splitTextToSize(label + ":", labelWidth - 2.4).length,
+          doc.splitTextToSize(value || "—", bankWidth - labelWidth - 2.4)
+            .length,
+        ) *
+          lineHeight +
+        2.4,
+      0,
+    ) +
+    (qr ? 38 : 0);
   const rightHeight =
     sums.length * (styles.fontSize * 0.3528 * 1.15 + 2.4) + 42;
   if (
@@ -304,17 +328,18 @@ export async function generatePDF(
   const footerTop = y;
   table(
     [
-      [
-        {
-          content: bankText,
-          styles: {
-            minCellHeight: bankHeight,
-            cellPadding: { top: 2, right: 2, bottom: qr ? 26 : 2, left: 2 },
-          },
-        },
-      ],
+      [{ content: "BANK DETAILS", colSpan: 2, styles: { fontStyle: "bold" } }],
+      ...bankRows.map(([label, value]) => [label + ":", value || "—"]),
+      ...(qr
+        ? [[{ content: "", colSpan: 2, styles: { minCellHeight: 38 } }]]
+        : []),
     ],
     {
+      tableWidth: bankWidth,
+      columnStyles: {
+        0: { cellWidth: labelWidth },
+        1: { cellWidth: bankWidth - labelWidth },
+      },
       margin: {
         left: margin,
         right: margin + width - bankWidth,
@@ -322,13 +347,8 @@ export async function generatePDF(
         bottom: 12,
       },
       didDrawCell: (data) => {
-        if (qr)
-          drawImage(
-            1,
-            data.cell.x + bankWidth - 27,
-            data.cell.y + data.cell.height - 26,
-            25,
-          );
+        if (qr && data.row.index === bankRows.length + 1)
+          drawImage(1, data.cell.x + 1, data.cell.y + 3, 32);
       },
     },
   );
@@ -415,7 +435,10 @@ export async function generatePDF(
     },
   );
   y = Math.max(y, bankBottom);
-  if (i.declaration) table([[{ content: `Declaration\n${i.declaration}`, styles: { fontSize: 7 } }]]);
+  if (i.declaration)
+    table([
+      [{ content: `Declaration\n${i.declaration}`, styles: { fontSize: 7 } }],
+    ]);
   const pages = doc.getNumberOfPages();
   for (let n = 1; n <= pages; n++) {
     doc.setPage(n);

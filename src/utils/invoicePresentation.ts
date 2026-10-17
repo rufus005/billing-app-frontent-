@@ -1,5 +1,5 @@
 import { calculate, round } from "./calculations";
-import type { Invoice } from "./invoiceTypes";
+import type { Invoice, Seller } from "./invoiceTypes";
 
 // Format calendar dates without timezone conversion or changing saved values.
 export function formatInvoiceDate(value: string): string {
@@ -47,4 +47,10 @@ export function taxRows(invoice: Invoice) {
   return invoice.taxJurisdiction === "inter"
     ? [["IGST", t.tax] as const]
     : [["CGST", t.cgst] as const, ["SGST", t.sgst] as const];
+}
+
+// Keep historical invoice details; fill only a missing legacy logo from settings.
+export function invoiceSeller(invoice: Invoice, business: Seller): Seller {
+  const seller = invoice.seller || business;
+  return { ...seller, logo: seller.logo || business.logo };
 }

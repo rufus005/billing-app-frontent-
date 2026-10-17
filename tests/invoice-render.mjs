@@ -7,7 +7,9 @@ const out = process.env.INVOICE_ARTIFACTS || "/tmp/billing-invoice-review";
 fs.mkdirSync(out, { recursive: true });
 const vite = await createServer({
   cacheDir: "node_modules/.vite-render",
-  optimizeDeps: { include: ["react", "react-dom/client", "pdfjs-dist", "jsqr"] },
+  optimizeDeps: {
+    include: ["react", "react-dom/client", "pdfjs-dist", "jsqr"],
+  },
   plugins: [
     {
       name: "invoice-test-fixture",
@@ -35,7 +37,14 @@ try {
   });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.route(`http://127.0.0.1:${vite.httpServer.address().port}/`, route => route.fulfill({ contentType: "text/html", body: '<!doctype html><html><head><link rel="stylesheet" href="/src/styles.css"></head><body></body></html>' }));
+  await page.route(
+    `http://127.0.0.1:${vite.httpServer.address().port}/`,
+    (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: '<!doctype html><html><head><link rel="stylesheet" href="/src/styles.css"></head><body></body></html>',
+      }),
+  );
   await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}`, {
     waitUntil: "domcontentloaded",
     timeout: 120000,
@@ -49,8 +58,91 @@ try {
     window.renderInvoice = (props) =>
       root.render(React.createElement(InvoicePreview, props));
   });
+  const storageResult = await page.evaluate(async () => {
+    const store = await import("/src/utils/browserSnapshots.ts");
+    const legacy = {
+      name: "Saved business",
+      logo: "data:image/png;base64,UNCHANGED",
+    };
+    localStorage.setItem("billing-app:seller:v1", JSON.stringify(legacy));
+    localStorage.setItem("billing-app:ledger:v2", "preserved-ledger");
+    await store.initializeSnapshots();
+    if (store.snapshotRaw("billing-app:seller:v1") !== JSON.stringify(legacy))
+      throw Error("Migration changed seller");
+    await store.persistSnapshot("billing-app:working:v1", {
+      seller: legacy,
+      payload: "x".repeat(6 * 1024 * 1024),
+    });
+    await store.persistSnapshot("billing-app:archived-draft:test", {
+      seller: legacy,
+    });
+    const db = await new Promise((resolve, reject) => {
+      const r = indexedDB.open("billing-app-snapshots", 1);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    const count = await new Promise((resolve) => {
+      const r = db.transaction("images").objectStore("images").count();
+      r.onsuccess = () => resolve(r.result);
+    });
+    const originalPut = IDBObjectStore.prototype.put;
+    localStorage.setItem(
+      "billing-app:draft:v1",
+      JSON.stringify({ preserve: true }),
+    );
+    IDBObjectStore.prototype.put = () => {
+      throw new DOMException("Full", "QuotaExceededError");
+    };
+    let failed = false;
+    try {
+      await store.persistSnapshot("billing-app:draft:v1", {
+        replacement: true,
+      });
+    } catch {
+      failed = true;
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+    if (
+      !failed ||
+      localStorage.getItem("billing-app:draft:v1") !== '{"preserve":true}'
+    )
+      throw Error("Failed write destroyed original");
+    return {
+      count,
+      ledger: localStorage.getItem("billing-app:ledger:v2"),
+      localSeller: localStorage.getItem("billing-app:seller:v1"),
+      usage: await store.storageUsage(),
+    };
+  });
+  assert.equal(
+    storageResult.count,
+    1,
+    "Duplicate image bytes must be stored once",
+  );
+  assert.equal(storageResult.ledger, "preserved-ledger");
+  assert.equal(
+    storageResult.localSeller,
+    null,
+    "Only redundant migrated copy is removed",
+  );
+  await page.evaluate(async () => {
+    const store = await import("/src/utils/browserSnapshots.ts?reload-test");
+    await store.initializeSnapshots();
+    const restored = JSON.parse(store.snapshotRaw("billing-app:working:v1"));
+    if (
+      restored.payload.length !== 6 * 1024 * 1024 ||
+      restored.seller.logo !== "data:image/png;base64,UNCHANGED"
+    )
+      throw Error("Large snapshot/image did not survive reload");
+  });
+  console.log(
+    "PASS real browser storage: migration, 6 MB snapshot, image deduplication, reload, failed-write preservation",
+    storageResult.usage,
+  );
   for (const format of ["a5", "a4"])
     for (const scenario of [
+      "branding",
       "partial",
       "zero",
       "paid",
@@ -58,7 +150,11 @@ try {
       "long",
       "multiple",
       "multipage",
-    ]) {
+    ].filter(
+      (scenario) =>
+        !process.env.INVOICE_SCENARIO ||
+        scenario === process.env.INVOICE_SCENARIO,
+    )) {
       const result = await page.evaluate(
         async ({ format, scenario }) => {
           const { newInvoice, defaultSeller } =
@@ -133,10 +229,40 @@ try {
               img.height,
             )?.data;
           }
-          const doc = await generatePDF(i, defaultSeller, payment, format);
+          const seller = { ...defaultSeller };
+          if (scenario === "branding") {
+            const canvas = document.createElement("canvas");
+            canvas.width = 240;
+            canvas.height = 180;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#39317a";
+            ctx.fillRect(0, 0, 240, 180);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 36px sans-serif";
+            ctx.fillText("LOGO", 62, 100);
+            const { invoiceSeller } =
+              await import("/src/utils/invoicePresentation.ts");
+            i.seller = { ...defaultSeller };
+            Object.assign(
+              seller,
+              invoiceSeller(i, { ...defaultSeller, logo: canvas.toDataURL() }),
+            );
+            if (!seller.logo)
+              throw Error("Legacy invoice lost the saved business logo");
+            seller.pan = "ABCDE1234F";
+            seller.email = "accounts@example.test";
+            seller.website = "https://example.test";
+            seller.branch = "KONANAKUNTE, BANGALORE — Business Banking Branch";
+            payment.payeeName =
+              "A long uploaded static QR payee name for layout verification";
+            payment.upiId = "long.existing.payment.identifier@bank";
+            payment.qrCode = source;
+            payment.qrMode = "static";
+          }
+          const doc = await generatePDF(i, seller, payment, format);
           window.renderInvoice({
             invoice: i,
-            seller: defaultSeller,
+            seller,
             payment,
             format,
           });
@@ -233,10 +359,7 @@ try {
       const text = execFileSync("pdftotext", [path + ".pdf", "-"], {
         encoding: "utf8",
       }).replace(/\s+/g, " ");
-      assert.match(
-        text,
-        /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARKTING/,
-      );
+      assert.match(text, /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARKTING/);
       assert.doesNotMatch(text, /Special Discount|Return Amount/);
       assert.match(text, /Rupees Eighteen Thousand Only/);
       if (scenario === "non-gst") {

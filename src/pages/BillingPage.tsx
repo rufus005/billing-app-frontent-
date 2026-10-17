@@ -1,3 +1,12 @@
+import {
+  persistSnapshot,
+  removeSnapshot,
+  snapshotRaw,
+  snapshotKeys,
+  storageFailure,
+  storageUsage,
+} from "../utils/browserSnapshots";
+import { invoiceSeller } from "../utils/invoicePresentation";
 import { PartyModal } from "../components/PartyModal";
 import { Dashboard } from "../components/Dashboard";
 import { businessProfileApi } from "../services/api";
@@ -42,7 +51,7 @@ import type {
   BusinessPaymentSettings,
 } from "../utils/invoiceTypes";
 import { defaultSeller, newInvoice } from "../utils/invoiceTypes";
-import { read, write, keys, getLedger } from "../utils/storage";
+import { read, keys, getLedger } from "../utils/storage";
 import {
   api,
   productApi,
@@ -83,6 +92,7 @@ export default function BillingPage() {
   const [savedQrMode, setSavedQrMode] = useState<Seller["qrMode"]>();
   const [profileReady, setProfileReady] = useState(false);
   const [profileBusy, setProfileBusy] = useState(false);
+  const [profileStored, setProfileStored] = useState(false);
   const [profileError, setProfileError] = useState("");
   useEffect(() => {
     businessProfileApi
@@ -284,19 +294,24 @@ export default function BillingPage() {
   const qrInput = useRef<HTMLInputElement>(null);
   const closePicker = useCallback(() => setPicker(false), []),
     closePreview = useCallback(() => setPreview(false), []);
-  const persist = (key: string, data: unknown) => {
+  const persist = async (key: string, data: unknown) => {
     try {
-      write(key, data);
+      await persistSnapshot(key, data);
       return true;
-    } catch {
-      setNotice(
-        "Storage is full or unavailable. Download your invoice before closing this tab.",
-      );
+    } catch (error) {
+      setNotice(storageFailure(error));
       return false;
     }
   };
   useEffect(() => {
-    persist(keys.seller, seller);
+    let active = true;
+    setProfileStored(false);
+    void persist(keys.seller, seller).then((ok) => {
+      if (active) setProfileStored(ok);
+    });
+    return () => {
+      active = false;
+    };
   }, [seller]);
 
   const loadPaymentSettings = useCallback(async () => {
@@ -387,10 +402,14 @@ export default function BillingPage() {
 
   useEffect(() => {
     setSaved(false);
-    const timer = setTimeout(() => {
-      if (persist(keys.working, invoice)) setSaved(true);
+    let active = true;
+    const timer = setTimeout(async () => {
+      if ((await persist(keys.working, invoice)) && active) setSaved(true);
     }, 400);
-    return () => clearTimeout(timer);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [invoice]);
   useEffect(() => {
     if (!notice) return;
@@ -401,6 +420,7 @@ export default function BillingPage() {
     const onLeave = (e: BeforeUnloadEvent) => {
       if (
         !saved ||
+        !profileStored ||
         paymentDirty ||
         paymentUnconfirmed ||
         paymentSaving ||
@@ -412,7 +432,14 @@ export default function BillingPage() {
     };
     window.addEventListener("beforeunload", onLeave);
     return () => window.removeEventListener("beforeunload", onLeave);
-  }, [saved, paymentDirty, paymentUnconfirmed, paymentSaving, qrReading]);
+  }, [
+    saved,
+    profileStored,
+    paymentDirty,
+    paymentUnconfirmed,
+    paymentSaving,
+    qrReading,
+  ]);
   const add = async (selection: Selection[]) => {
     try {
       const latest = await buyerPriceApi.list();
@@ -442,9 +469,10 @@ export default function BillingPage() {
       setNotice((e as Error).message);
     }
   };
-  const startInvoice = () => {
+  const startInvoice = async () => {
     if (invoice.items.length || invoice.buyer.name || invoice.buyer.address) {
-      if (!persist(`billing-app:archived-draft:${invoice.id}`, invoice)) return;
+      if (!(await persist(`billing-app:archived-draft:${invoice.id}`, invoice)))
+        return;
     }
     setInvoice(newInvoice());
     setPage("billing");
@@ -482,10 +510,13 @@ export default function BillingPage() {
         throw new Error(
           "Payment settings unavailable. Retry loading in Business settings, then export again.",
         );
+      const exportBusiness = profileReady
+        ? seller
+        : { ...seller, ...(await businessProfileApi.get()) };
       const { generatePDF } = await import("../utils/pdfGenerator");
       const doc = await generatePDF(
         invoice,
-        invoice.seller || seller,
+        invoiceSeller(invoice, exportBusiness),
         { ...confirmedPayment, qrMode: savedQrMode },
         paperSize,
       );
@@ -830,8 +861,8 @@ export default function BillingPage() {
                         Save to Sales as Draft
                       </button>
                       <button
-                        onClick={() => {
-                          if (persist(keys.draft, invoice))
+                        onClick={async () => {
+                          if (await persist(keys.draft, invoice))
                             setNotice(
                               "Draft saved. You can load it at any time.",
                             );
@@ -865,14 +896,14 @@ export default function BillingPage() {
                       </button>
                       <button
                         className="text-button muted"
-                        onClick={() => {
+                        onClick={async () => {
                           if (
                             confirm(
                               "Delete the saved draft? Your current invoice will remain.",
                             )
                           )
                             try {
-                              localStorage.removeItem(keys.draft);
+                              await removeSnapshot(keys.draft);
                               setNotice("Saved draft cleared.");
                             } catch {
                               setNotice("Could not clear local storage.");
@@ -1010,6 +1041,22 @@ export default function BillingPage() {
                 </section>
                 <section className="card">
                   <h2>Local data backup and import</h2>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const usage = await storageUsage();
+                        const mb = (bytes: number) =>
+                          (bytes / 1024 / 1024).toFixed(2);
+                        setNotice(
+                          `Local storage: ${mb(usage.localBytes)} MB. Browser storage: ${usage.usage === undefined ? "unavailable" : mb(usage.usage) + " MB"}; quota: ${usage.quota === undefined ? "unavailable" : mb(usage.quota) + " MB"}.`,
+                        );
+                      } catch (error) {
+                        setNotice(storageFailure(error));
+                      }
+                    }}
+                  >
+                    Check browser storage usage
+                  </button>
                   <p>
                     Existing browser data is preserved. Import copies products
                     and saved sales into an empty database, keeping current
@@ -1019,10 +1066,13 @@ export default function BillingPage() {
                   <button
                     onClick={() => {
                       const data = Object.fromEntries(
-                        Object.values(keys).map((key) => [
-                          key,
-                          localStorage.getItem(key),
-                        ]),
+                        snapshotKeys()
+                          .filter(
+                            (key) =>
+                              Object.values(keys).includes(key) ||
+                              key.startsWith("billing-app:archived-draft:"),
+                          )
+                          .map((key) => [key, snapshotRaw(key)]),
                       );
                       const url = URL.createObjectURL(
                         new Blob([JSON.stringify(data, null, 2)], {
@@ -1258,7 +1308,7 @@ export default function BillingPage() {
       </div>
       {localDraftsOpen && (
         <Modal title="Local drafts" onClose={() => setLocalDraftsOpen(false)}>
-          {Object.keys(localStorage)
+          {snapshotKeys()
             .filter((key) => key.startsWith("billing-app:archived-draft:"))
             .map((key) => {
               const draft = read<Invoice | null>(key, null);
@@ -1266,13 +1316,13 @@ export default function BillingPage() {
                 draft && (
                   <p key={key}>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (
                           (invoice.items.length || invoice.buyer.name) &&
-                          !persist(
+                          !(await persist(
                             `billing-app:archived-draft:${invoice.id}`,
                             invoice,
-                          )
+                          ))
                         )
                           return;
                         setInvoice(draft);
@@ -1364,12 +1414,18 @@ export default function BillingPage() {
           )}
           <div className="preview-scroll">
             <Suspense fallback={<p role="status">Loading invoice preview…</p>}>
-              <InvoicePreview
-                format={paperSize}
-                invoice={invoice}
-                seller={invoice.seller || seller}
-                payment={{ ...savedPayment, qrMode: savedQrMode }}
-              />
+              {profileReady ? (
+                <InvoicePreview
+                  format={paperSize}
+                  invoice={invoice}
+                  seller={invoiceSeller(invoice, seller)}
+                  payment={{ ...savedPayment, qrMode: savedQrMode }}
+                />
+              ) : (
+                <p role="status">
+                  {profileError || "Loading saved business logo and details…"}
+                </p>
+              )}
             </Suspense>
           </div>
           <footer>

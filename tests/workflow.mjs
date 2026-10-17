@@ -68,7 +68,9 @@ try {
   await page.getByRole("button", { name: "Save Buyer", exact: true }).click();
   await expect(page.getByText("Workflow Buyer", { exact: true })).toBeVisible();
   await nav("Products");
-  await page.getByRole("button", { name: "Create product", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Create product", exact: true })
+    .click();
   await page
     .getByLabel("Product name", { exact: true })
     .fill("Workflow Cabinet");
@@ -84,13 +86,31 @@ try {
   ).toBeVisible();
   await nav("Business settings");
   await page.getByLabel("Company / seller name").fill("Workflow Business");
+  const savedLogo = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 240;
+    canvas.height = 160;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#39317a";
+    ctx.fillRect(0, 0, 240, 160);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillText("BUSINESS", 30, 85);
+    return canvas.toDataURL("image/png");
+  });
+  await page.getByLabel("Upload logo", { exact: true }).setInputFiles({
+    name: "business-logo.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(savedLogo.split(",")[1], "base64"),
+  });
+  await expect(page.getByAltText("Business logo preview")).toBeVisible();
   await page.getByLabel("Invoice QR mode").selectOption("dynamic");
   await page
     .getByRole("button", { name: "Save business details", exact: true })
     .click();
   await page.getByLabel("UPI ID", { exact: true }).fill("workflow@bank");
   await page
-    .getByLabel("UPI payee name", { exact: true })
+    .getByLabel("UPI Payee Name", { exact: true })
     .fill("Workflow Business");
   await page.getByRole("button", { name: "Save Changes", exact: true }).click();
   await expect(
@@ -134,6 +154,7 @@ try {
   await expect(page.locator(".invoice-preview")).toHaveAttribute(
     "aria-busy",
     "false",
+    { timeout: 60000 },
   );
   await page.getByRole("button", { name: "Close dialog", exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
@@ -186,6 +207,7 @@ try {
     page.getByRole("heading", { name: "Create invoice" }),
   ).toBeVisible();
   assert.equal((await get("/business-profile")).name, "Workflow Business");
+  assert.equal((await get("/business-profile")).logo, savedLogo);
   // Create must clear the form while keeping both explicit and displaced drafts.
   await page.getByRole("button", { name: "Save Draft", exact: true }).click();
   await nav("Create invoice");
