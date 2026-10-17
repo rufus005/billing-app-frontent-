@@ -1243,14 +1243,14 @@ kbd {
 }
 .invoice-bank-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 28mm;
+  grid-template-columns: minmax(0, 1fr) 32mm;
   gap: 1mm;
   align-items: start;
 }
 .invoice-qr {
   display: block;
-  width: 27mm;
-  height: 27mm;
+  width: 32mm;
+  height: 32mm;
   padding: 0.5mm;
   border: 0.2mm solid #777;
   object-fit: contain;
