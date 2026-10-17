@@ -352,9 +352,11 @@ export async function generatePDF(
   doc.setFontSize(styles.fontSize);
   const labelWidth = bankWidth * 0.3;
   const lineHeight = styles.fontSize * 0.3528 * 1.15;
+  const qrSize = 32;
+  const qrCellHeight = qrSize + 2;
   const paymentHeight = qr
     ? Math.max(
-        23,
+        qrCellHeight,
         doc.splitTextToSize(
           `PAYMENT QR CODE\n\n${paymentDetails}`,
           bankWidth * 0.5 - 2.4,
@@ -448,7 +450,7 @@ export async function generatePDF(
       [
         [
           { content: `PAYMENT QR CODE\n\n${paymentDetails || " "}` },
-          { content: "", styles: { minCellHeight: 23 } },
+          { content: "", styles: { minCellHeight: qrCellHeight } },
         ],
       ],
       {
@@ -465,12 +467,11 @@ export async function generatePDF(
         },
         didDrawCell: (data) => {
           if (data.column.index !== 1) return;
-          const box = 21;
           drawImage(
             1,
             data.cell.x + 1,
-            data.cell.y + (data.cell.height - box) / 2,
-            box,
+            data.cell.y + (data.cell.height - qrSize) / 2,
+            qrSize,
           );
         },
       },
