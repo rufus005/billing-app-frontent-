@@ -352,7 +352,7 @@ export async function generatePDF(
   doc.setFontSize(styles.fontSize);
   const labelWidth = bankWidth * 0.3;
   const lineHeight = styles.fontSize * 0.3528 * 1.15;
-  const qrSize = 38;
+  const qrSize = 42;
   const qrCellHeight = qrSize + 2;
   const paymentHeight = qr
     ? Math.max(
