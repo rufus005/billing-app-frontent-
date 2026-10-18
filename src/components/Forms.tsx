@@ -1,3 +1,4 @@
+import { BuyerAddressFields } from "./BuyerAddressFields";
 import { calculate } from "../utils/calculations";
 import type { Buyer, Invoice, Seller } from "../utils/invoiceTypes";
 export function Field({
@@ -53,18 +54,15 @@ export function BuyerForm({
         maxLength={30}
       />
       <Field
-        label="Billing address"
-        value={buyer.address}
-        onChange={(address) => onChange({ ...buyer, address })}
-        placeholder="Street, city, state and PIN code"
-        maxLength={250}
-      />
-      <Field
         label="GSTIN (optional)"
         value={buyer.gstin}
         onChange={(gstin) => onChange({ ...buyer, gstin })}
         placeholder="Enter GSTIN"
         maxLength={15}
+      />
+      <BuyerAddressFields
+        address={buyer.address}
+        onChange={(address) => onChange({ ...buyer, address })}
       />
     </div>
   );

@@ -354,12 +354,13 @@ export async function generatePDF(
   const lineHeight = styles.fontSize * 0.3528 * 1.15;
   const qrSize = 38;
   const qrCellHeight = qrSize + 2;
+  const qrColumnWidth = Math.max(bankWidth * 0.5, qrSize + 2);
   const paymentHeight = qr
     ? Math.max(
         qrCellHeight,
         doc.splitTextToSize(
           `PAYMENT QR CODE\n\n${paymentDetails}`,
-          bankWidth * 0.5 - 2.4,
+          bankWidth - qrColumnWidth - 2.4,
         ).length *
           lineHeight +
           2.4,
@@ -456,8 +457,8 @@ export async function generatePDF(
       {
         tableWidth: bankWidth,
         columnStyles: {
-          0: { cellWidth: bankWidth * 0.5 },
-          1: { cellWidth: bankWidth * 0.5 },
+          0: { cellWidth: bankWidth - qrColumnWidth },
+          1: { cellWidth: qrColumnWidth },
         },
         margin: {
           left: margin,

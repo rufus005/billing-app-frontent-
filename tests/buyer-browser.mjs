@@ -16,7 +16,7 @@ try {
  await page.getByLabel("Buyer Name",{exact:true}).fill("Sample Buyer");
  await page.getByLabel("Mobile Number",{exact:true}).fill("9000000000");
  await page.getByRole("button",{name:"02 Address",exact:true}).click();
- await page.getByLabel("Address / Area",{exact:true}).fill("House 42, Main Road");
+ await page.getByLabel("Address / Street / Area",{exact:true}).fill("House 42, Main Road");
  await page.getByLabel("PIN Code",{exact:true}).fill("560062");
  await expect(page.getByLabel("City / District",{exact:true})).toHaveValue("Bengaluru Urban");
  await expect(page.getByLabel("State",{exact:true})).toHaveValue("Karnataka");

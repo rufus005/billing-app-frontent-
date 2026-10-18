@@ -2670,3 +2670,21 @@ select {
   .dashboard-filters { flex-wrap: wrap; }
   .preview-scroll { padding: 4px; }
 }
+
+.form-grid .field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 90px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  color: #30384b;
+  border: 1px solid #dfe3ec;
+  border-radius: 5px;
+  padding: 10px 11px;
+  background: white;
+}
+.form-grid .field textarea:focus {
+  outline: 2px solid #9d94ee;
+  outline-offset: 2px;
+}

@@ -84,8 +84,8 @@ export function BuyerManager({
             buyer={edit}
             exists={buyers.some((b) => b.id === edit.id)}
             onClose={() => setEdit(null)}
-            onSaved={() => {
-              setEdit(null);
+            onSaved={(_buyer, keepOpen) => {
+              if (!keepOpen) setEdit(null);
               void reload().catch((e) => notify(e.message));
             }}
           />

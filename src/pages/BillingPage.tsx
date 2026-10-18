@@ -1,3 +1,4 @@
+import { joinBuyerAddress, splitBuyerAddress } from "../utils/buyerAddress";
 import {
   persistSnapshot,
   removeSnapshot,
@@ -94,18 +95,29 @@ export default function BillingPage() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileStored, setProfileStored] = useState(false);
   const [profileError, setProfileError] = useState("");
-  useEffect(() => {
-    businessProfileApi
-      .get()
-      .then((value) => {
-        if (value) {
-          setSeller((old) => ({ ...old, ...value }));
-          setSavedQrMode(value.qrMode);
-        }
-        setProfileReady(true);
-      })
-      .catch((e) => setProfileError(e.message));
+  const initialSeller = useRef(JSON.stringify(seller));
+  const loadBusinessProfile = useCallback(async () => {
+    setProfileError("");
+    try {
+      const value = await businessProfileApi.get();
+      if (value) {
+        setSeller((old) =>
+          JSON.stringify(old) === initialSeller.current
+            ? { ...old, ...value }
+            : old,
+        );
+        setSavedQrMode(value.qrMode);
+      }
+      setProfileReady(true);
+      return value;
+    } catch (e) {
+      setProfileError((e as Error).message);
+      throw e;
+    }
   }, []);
+  useEffect(() => {
+    void loadBusinessProfile().catch(() => {});
+  }, [loadBusinessProfile]);
   const saveProfile = async () => {
     setProfileBusy(true);
     try {
@@ -113,6 +125,7 @@ export default function BillingPage() {
       setSeller(value);
       setSavedQrMode(value.qrMode);
       setProfileError("");
+      setProfileReady(true);
       setNotice("Business details saved to MongoDB.");
     } catch (e) {
       setProfileError((e as Error).message);
@@ -200,7 +213,9 @@ export default function BillingPage() {
           ? {
               name: buyer.name,
               mobile: buyer.mobile,
-              address: buyer.address,
+              address: buyer.addressParts
+                ? joinBuyerAddress(buyer.addressParts)
+                : buyer.address,
               gstin: buyer.gstin,
             }
           : { name: "", mobile: "", address: "", gstin: "" },
@@ -512,7 +527,7 @@ export default function BillingPage() {
         );
       const exportBusiness = profileReady
         ? seller
-        : { ...seller, ...(await businessProfileApi.get()) };
+        : { ...seller, ...(await loadBusinessProfile()) };
       const { generatePDF } = await import("../utils/pdfGenerator");
       const doc = await generatePDF(
         invoice,
@@ -556,15 +571,17 @@ export default function BillingPage() {
       {newParty && (
         <PartyModal
           onClose={() => setNewParty(false)}
-          onSaved={(buyer) => {
-            setNewParty(false);
+          onSaved={(buyer, keepOpen) => {
+            if (!keepOpen) setNewParty(false);
             setInvoice((old) => ({
               ...old,
               buyerId: buyer.id,
               buyer: {
                 name: buyer.name,
                 mobile: buyer.mobile,
-                address: buyer.address,
+                address: buyer.addressParts
+                  ? joinBuyerAddress(buyer.addressParts)
+                  : buyer.address,
                 gstin: buyer.gstin,
               },
               shipTo: buyer.shippingAddress
@@ -759,9 +776,55 @@ export default function BillingPage() {
                         }}
                       />
                       <BuyerForm
+                        key={`${invoice.id}:${invoice.buyerId || "walk-in"}`}
                         buyer={invoice.buyer}
                         onChange={(buyer) => setInvoice({ ...invoice, buyer })}
                       />
+                      {invoice.buyerId && (
+                        <button
+                          disabled={busy}
+                          onClick={async () => {
+                            const original = buyers.find(
+                              (b) => b.id === invoice.buyerId,
+                            );
+                            if (!original) {
+                              setNotice(
+                                "Load the saved buyer before updating billing details.",
+                              );
+                              return;
+                            }
+                            setBusy(true);
+                            try {
+                              const savedBuyer = await buyerApi.save(
+                                {
+                                  ...original,
+                                  ...invoice.buyer,
+                                  addressParts: splitBuyerAddress(
+                                    invoice.buyer.address,
+                                  ),
+                                },
+                                true,
+                              );
+                              if (savedBuyer.address !== invoice.buyer.address)
+                                throw Error(
+                                  "The server did not preserve the billing address. Your local edits are retained.",
+                                );
+                              setBuyers((old) =>
+                                old.map((b) =>
+                                  b.id === savedBuyer.id ? savedBuyer : b,
+                                ),
+                              );
+                              setNotice("Buyer billing details saved.");
+                            } catch (e) {
+                              setNotice((e as Error).message);
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                        >
+                          Save Buyer
+                        </button>
+                      )}
                     </section>
                     <section className="card">
                       <div className="section-title">
@@ -1414,7 +1477,7 @@ export default function BillingPage() {
           )}
           <div className="preview-scroll">
             <Suspense fallback={<p role="status">Loading invoice preview…</p>}>
-              {profileReady ? (
+              {profileReady && paymentLoaded ? (
                 <InvoicePreview
                   format={paperSize}
                   invoice={invoice}
@@ -1422,9 +1485,18 @@ export default function BillingPage() {
                   payment={{ ...savedPayment, qrMode: savedQrMode }}
                 />
               ) : (
-                <p role="status">
-                  {profileError || "Loading saved business logo and details…"}
-                </p>
+                <div role={profileError ? "alert" : "status"}>
+                  {!profileReady &&
+                    (profileError ||
+                      "Loading saved business logo and details…")}
+                  {profileError && (
+                    <button
+                      onClick={() => void loadBusinessProfile().catch(() => {})}
+                    >
+                      Retry business details
+                    </button>
+                  )}
+                </div>
               )}
             </Suspense>
           </div>

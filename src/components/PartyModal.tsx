@@ -12,7 +12,7 @@ export function PartyModal({
   buyer?: BuyerRecord;
   exists?: boolean;
   onClose: () => void;
-  onSaved: (buyer: BuyerRecord) => void;
+  onSaved: (buyer: BuyerRecord, keepOpen?: boolean) => void;
 }) {
   const [edit, setEdit] = useState<BuyerRecord>(
     () =>
@@ -46,11 +46,25 @@ export function PartyModal({
             setError("Enter a party name in Basic Details.");
             return;
           }
+          const keepOpen =
+            (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") ===
+            "new";
           setBusy(true);
           setError("");
           try {
             const saved = await buyerApi.save(edit, exists);
-            onSaved(saved);
+            onSaved(saved, keepOpen);
+            if (keepOpen)
+              setEdit({
+                id: crypto.randomUUID(),
+                name: "",
+                mobile: "",
+                address: "",
+                gstin: "",
+                email: "",
+                notes: "",
+                active: true,
+              });
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -58,7 +72,7 @@ export function PartyModal({
           }
         }}
       >
-        <BuyerDetailsFields buyer={edit} onChange={setEdit} />
+        <BuyerDetailsFields key={edit.id} buyer={edit} onChange={setEdit} />
         {error && (
           <p role="alert" className="warning">
             {error}
@@ -76,6 +90,11 @@ export function PartyModal({
           <button type="button" disabled={busy} onClick={onClose}>
             Cancel
           </button>
+          {!exists && (
+            <button type="submit" value="new" disabled={busy}>
+              Save &amp; New
+            </button>
+          )}
           <button className="primary" disabled={busy}>
             {busy ? "Saving…" : "Save Buyer"}
           </button>

@@ -10,6 +10,12 @@ describe("compatible buyer addresses", () => {
   const parts = { area: "House 5\nMain Road", pin: "560062", city: "Bengaluru", state: "Karnataka" };
   expect(splitBuyerAddress(joinBuyerAddress(parts))).toEqual(parts);
  });
+ it("preserves other fields while a PIN is being typed or deleted", () => {
+  for (const pin of ["", "5", "56", "560", "5600", "56006", "560062"]) {
+   const parts = {area:"Main Road",pin,city:"Bengaluru",state:"Karnataka"};
+   expect(splitBuyerAddress(joinBuyerAddress(parts))).toEqual(parts);
+  }
+ });
  it("rejects malformed pins without making a request", async () => {
   const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   await expect(lookupPin("012345", new AbortController().signal)).rejects.toThrow("6-digit");
