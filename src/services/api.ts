@@ -46,6 +46,7 @@ async function request<T>(
   try {
     response = await fetch(`${apiBaseUrl}/api${path}`, {
       method,
+      cache: "no-store",
       signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
       headers: {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
@@ -56,7 +57,7 @@ async function request<T>(
   } catch (error) {
     if (error instanceof DOMException && error.name === "TimeoutError")
       throw Error("The server took too long to respond. Please retry.");
-    throw Error("Server unavailable. Check that the backend is running.");
+    throw Error("Unable to reach the server. Check your connection and retry. Your local draft is preserved.");
   }
   if (
     response.status === 401 &&

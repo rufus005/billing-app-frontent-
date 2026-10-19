@@ -2688,3 +2688,23 @@ select {
   outline: 2px solid #9d94ee;
   outline-offset: 2px;
 }
+
+.app-support { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px 16px; background: #f7f8fc; }
+.app-support:empty { display: none; }
+.app-support p { margin: 0; flex: 1 1 300px; font-size: 13px; }
+.app-support button { min-height: 36px; }
+.startup-status { padding: 24px; }
+@media (max-width: 640px) {
+  input, textarea, select { font-size: 16px; }
+  .app-support { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+@media print { .app-support { display: none !important; } }
+@media (max-width: 540px) {
+  .sidebar .brand { flex-shrink: 0; }
+  .sidebar nav { min-width: 0; overflow-x: auto; margin-left: 12px; }
+  .sidebar nav button { flex-shrink: 0; }
+  .field input, .field select, .field textarea { font-size: 16px; }
+}

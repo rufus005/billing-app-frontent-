@@ -493,8 +493,8 @@ export default function BillingPage() {
     setPage("billing");
     setNotice("New invoice ready. Previous work is available in local drafts.");
   };
-  const navigate = (target: string) =>
-    target === "billing" ? startInvoice() : setPage(target);
+  // Navigation resumes the editor; only New invoice archives and resets work.
+  const navigate = (target: string) => setPage(target);
   const [localDraftsOpen, setLocalDraftsOpen] = useState(false);
   const exportInvoice = async (print = false) => {
     if (!invoice.items.length) {

@@ -14,7 +14,8 @@
     "test:server": "tsx tests/server.mjs",
     "test:frontend": "tsx tests/payment-browser.mjs",
     "lint": "eslint src",
-    "test:invoice": "node --import tsx tests/invoice-render.mjs"
+    "test:invoice": "node --import tsx tests/invoice-render.mjs",
+    "test:pwa": "node --import tsx tests/pwa.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",

@@ -79,7 +79,8 @@ export function BuyerAddressFields({
       <label className="field buyer-wide">
         Address / Street / Area
         <textarea
-          autoComplete="street-address"
+          aria-label="Address / Street / Area"
+          autoComplete="off"
           rows={3}
           value={parts.area}
           onChange={(e) => update("area", e.target.value)}
@@ -90,7 +91,7 @@ export function BuyerAddressFields({
         PIN Code
         <input
           inputMode="numeric"
-          autoComplete="postal-code"
+          autoComplete="off"
           maxLength={6}
           value={parts.pin}
           onChange={(e) => update("pin", e.target.value.replace(/\D/g, ""))}
@@ -101,7 +102,7 @@ export function BuyerAddressFields({
       <label className="field">
         City / District
         <input
-          autoComplete="address-level2"
+          autoComplete="off"
           value={parts.city}
           onChange={(e) => update("city", e.target.value)}
         />
@@ -109,7 +110,7 @@ export function BuyerAddressFields({
       <label className="field buyer-wide">
         State
         <input
-          autoComplete="address-level1"
+          autoComplete="off"
           value={parts.state}
           onChange={(e) => update("state", e.target.value)}
         />

@@ -76,7 +76,7 @@ export function BuyerDetailsFields({
             <label>
               Buyer Name
               <input
-                autoComplete="organization"
+                autoComplete="off"
                 value={buyer.name}
                 onChange={(e) => onChange({ ...buyer, name: e.target.value })}
                 placeholder="Customer or company name"
@@ -86,7 +86,7 @@ export function BuyerDetailsFields({
               Mobile Number
               <input
                 type="tel"
-                autoComplete="tel"
+                autoComplete="off"
                 value={buyer.mobile}
                 onChange={(e) => onChange({ ...buyer, mobile: e.target.value })}
               />

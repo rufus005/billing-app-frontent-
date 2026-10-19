@@ -21,6 +21,7 @@ export function Field({
       <span>{label}</span>
       <input
         type={type}
+        autoComplete="off"
         step={type === "number" ? "any" : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}

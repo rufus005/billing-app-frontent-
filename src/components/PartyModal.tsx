@@ -39,6 +39,7 @@ export function PartyModal({
       onClose={close}
     >
       <form
+        autoComplete="off"
         className="buyer-editor"
         onSubmit={async (e) => {
           e.preventDefault();

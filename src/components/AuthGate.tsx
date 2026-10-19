@@ -1,6 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, session } from "../services/api";
-export function AuthGate({ children }: { children: ReactNode }) {
+export function AuthGate({
+  children,
+  onLoginIntent,
+}: {
+  children: ReactNode;
+  onLoginIntent?: () => void;
+}) {
   const [ready, setReady] = useState(false),
     [checking, setChecking] = useState(true),
     [error, setError] = useState(""),
@@ -36,15 +42,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
         <form
           className="card login-card"
+          onFocus={onLoginIntent}
           onSubmit={async (e) => {
             e.preventDefault();
             setChecking(true);
             setError("");
             try {
-              const result = await api<{ token: string }>("/auth/login", "POST", {
-                username,
-                password,
-              });
+              const result = await api<{ token: string }>(
+                "/auth/login",
+                "POST",
+                {
+                  username,
+                  password,
+                },
+              );
               session.set(result.token);
               setPassword("");
               setReady(true);
@@ -82,7 +93,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
-          {error && <p className="login-error" role="alert">{error}</p>}
+          {error && (
+            <p className="login-error" role="alert">
+              {error}
+            </p>
+          )}
           <button className="primary" disabled={checking}>
             {checking ? "Checking session…" : "Log in"}
           </button>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useDeferredValue } from "react";
 import { Search, ScanLine, Plus, Check } from "lucide-react";
 import type { Product } from "../utils/invoiceTypes";
 import { money, numeric } from "../utils/calculations";
@@ -16,31 +16,40 @@ export function AddItemModal({
   onAdd: (selection: Selection[]) => void;
   onClose: () => void;
 }) {
-  const products = catalogue.flatMap((p) =>
-    p.variants?.length
-      ? p.variants.map((v) => ({
-          ...p,
-          id: JSON.stringify([p.id, v.id]),
-          name: p.name + " - " + v.color,
-          code: v.code,
-          barcode: v.barcode,
-          price: v.price,
-          stock: v.stock,
-        }))
-      : [p],
+  const products = useMemo(
+    () =>
+      catalogue.flatMap((p) =>
+        p.variants?.length
+          ? p.variants.map((v) => ({
+              ...p,
+              id: JSON.stringify([p.id, v.id]),
+              name: p.name + " - " + v.color,
+              code: v.code,
+              barcode: v.barcode,
+              price: v.price,
+              stock: v.stock,
+            }))
+          : [p],
+      ),
+    [catalogue],
   );
   const [search, setSearch] = useState(""),
     [category, setCategory] = useState(""),
     [selected, setSelected] = useState<Record<string, number>>({}),
     [creating, setCreating] = useState(false);
   const close = useCallback(onClose, [onClose]);
-  const filtered = products.filter(
-    (p) =>
-      (!category || p.category === category) &&
-      [p.name, p.code, p.barcode, p.hsn, p.category]
-        .join(" ")
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+  const query = useDeferredValue(search).toLowerCase();
+  const filtered = useMemo(
+    () =>
+      products.filter(
+        (p) =>
+          (!category || p.category === category) &&
+          [p.name, p.code, p.barcode, p.hsn, p.category]
+            .join(" ")
+            .toLowerCase()
+            .includes(query),
+      ),
+    [products, category, query],
   );
   const chosen = products.filter((p) => selected[p.id] > 0);
   const submit = () => {

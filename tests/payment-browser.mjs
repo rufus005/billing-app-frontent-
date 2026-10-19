@@ -48,6 +48,7 @@ try {
     if (path === "/api/auth/login") return reply({ token: "test-session" });
     assert.equal(req.headers().authorization, "Bearer test-session");
     if (path === "/api/auth/me") return reply({ username: "test" });
+    if (path === "/api/business-profile") return reply(null);
     if (path === "/api/business-payment") {
       if (req.method() === "GET")
         return loadFails

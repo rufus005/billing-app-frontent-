@@ -1,5 +1,5 @@
 import { PartyModal } from "./PartyModal";
-import { useState } from "react";
+import { useState, useDeferredValue } from "react";
 import type { BuyerRecord, BuyerPrice, Product } from "../utils/invoiceTypes";
 import { buyerApi, buyerPriceApi } from "../services/api";
 import { Field } from "./Forms";
@@ -14,6 +14,7 @@ export function BuyerSelector({
   onChange: (id: string) => void;
 }) {
   const [search, setSearch] = useState("");
+  const query = useDeferredValue(search).toLowerCase();
   return (
     <div className="form-grid">
       <Field label="Search buyers" value={search} onChange={setSearch} />
@@ -33,7 +34,7 @@ export function BuyerSelector({
                   [b.name, b.mobile, b.gstin]
                     .join(" ")
                     .toLowerCase()
-                    .includes(search.toLowerCase())),
+                    .includes(query)),
             )
             .map((b) => (
               <option key={b.id} value={b.id}>
@@ -56,6 +57,7 @@ export function BuyerManager({
 }) {
   const [edit, setEdit] = useState<BuyerRecord | null>(null),
     [search, setSearch] = useState("");
+  const query = useDeferredValue(search).toLowerCase();
   return (
     <>
       <div className="page-heading">
@@ -113,7 +115,7 @@ export function BuyerManager({
                       [b.name, b.mobile, b.gstin]
                         .join(" ")
                         .toLowerCase()
-                        .includes(search.toLowerCase()),
+                        .includes(query),
                     )
                     .map((b) => (
                       <tr key={b.id}>
@@ -263,6 +265,7 @@ export function PriceManager({
 }) {
   const [buyer, setBuyer] = useState(""),
     [search, setSearch] = useState("");
+  const query = useDeferredValue(search).toLowerCase();
   return (
     <>
       <div className="page-heading">
@@ -294,7 +297,7 @@ export function PriceManager({
                     [p.name, p.code, p.hsn]
                       .join(" ")
                       .toLowerCase()
-                      .includes(search.toLowerCase()),
+                      .includes(query),
                   )
                   .flatMap((p) =>
                     (p.variants?.length ? p.variants : [undefined]).map((v) => (

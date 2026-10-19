@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useDeferredValue } from "react";
 import { Pencil, Plus, Trash2, Search } from "lucide-react";
 import type { Product } from "../utils/invoiceTypes";
 import { Field } from "./Forms";
@@ -193,6 +193,7 @@ export function ProductManager({
 }) {
   const [edit, setEdit] = useState<Product | null | undefined>(undefined);
   const [search, setSearch] = useState("");
+  const query = useDeferredValue(search).toLowerCase();
   return (
     <>
       <div className="page-heading">
@@ -259,7 +260,7 @@ export function ProductManager({
                       Object.values(p)
                         .join(" ")
                         .toLowerCase()
-                        .includes(search.toLowerCase()),
+                        .includes(query),
                     )
                     .map((p) => (
                       <tr key={p.id}>
