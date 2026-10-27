@@ -25,16 +25,15 @@ export function SalesManager({
   useEffect(() => {
     let active = true;
     const timer = setTimeout(
-      () =>
-        invoiceApi
-          .list(
-            "?" +
-              new URLSearchParams({
-                search,
-                ...(from ? { from } : {}),
-                ...(to ? { to } : {}),
-              }),
-          )
+      () => {
+        const params = new URLSearchParams({
+          ...(search.trim() ? { search: search.trim() } : {}),
+          ...(from ? { from } : {}),
+          ...(to ? { to } : {}),
+        });
+        const query = params.toString();
+        return invoiceApi
+          .list(query ? `?${query}` : "")
           .then((v) => {
             if (active) {
               setSales(v);
@@ -46,7 +45,8 @@ export function SalesManager({
               setError(e.message);
               setSales([]);
             }
-          }),
+          });
+      },
       200,
     );
     return () => {
