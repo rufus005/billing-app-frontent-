@@ -230,7 +230,7 @@ export async function generatePDF(
   );
   y += 2;
   table(
-    i.items.map((r) => {
+    i.items.map((r, index) => {
       const gst = i.taxMode === "non-gst" ? 0 : (r.gstPercent ?? i.gst);
       const rate =
         (r.finalPrice ?? r.price) * (1 - (r.discountPercent || 0) / 100);
@@ -240,9 +240,19 @@ export async function generatePDF(
       const tax =
         i.pricingMode === "exclusive" ? (amount * gst) / 100 : amount - taxable;
       return [
-        r.name +
-          (r.color ? `\nCOLOR ${r.color}` : "") +
-          (r.discountPercent ? ` (discount ${r.discountPercent}%)` : ""),
+        {
+          content:
+            r.name +
+            (r.color ? `\nCOLOR ${r.color}` : "") +
+            (r.discountPercent ? ` (discount ${r.discountPercent}%)` : ""),
+          ...(i.items.length <= 2 && index === i.items.length - 1
+            ? {
+                styles: {
+                  minCellHeight: format === "a4" ? 50 : 34,
+                },
+              }
+            : {}),
+        },
         r.hsn,
         String(r.qty),
         (i.pricingMode === "exclusive" ? rate : rate / (1 + gst / 100)).toFixed(
@@ -361,7 +371,7 @@ export async function generatePDF(
       },
     },
   );
-  y += 2;
+  y += format === "a4" ? 8 : 6;
   const bankWidth = width * 0.52;
   const compactStyles = {
     ...styles,
@@ -480,7 +490,7 @@ export async function generatePDF(
     ],
   ]);
   y = Math.max(y, bankBottom);
-  y = Math.max(y + 3, pageHeight - margin - 44);
+  y = Math.max(y + 3, pageHeight - margin - 54);
   const footerRows: RowInput[] = [
     [
       { content: "", styles: { cellWidth: width * 0.48 } },
