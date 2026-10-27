@@ -96,7 +96,16 @@ function resource<T extends { id: string }>(path: string) {
 export const productApi = resource<Product>("/products");
 export const buyerApi = resource<BuyerRecord>("/buyers");
 export const buyerPriceApi = resource<BuyerPrice>("/buyer-prices");
-export const invoiceApi = resource<Invoice>("/invoices");
+const invoices = resource<Invoice>("/invoices");
+export const invoiceApi = {
+  ...invoices,
+  convert: (quotation: Invoice) =>
+    api<Invoice>(
+      `/invoices/${encodeURIComponent(quotation.id)}/convert`,
+      "POST",
+      quotation,
+    ),
+};
 export const businessPaymentApi = {
   get: () =>
     api<unknown>("/business-payment", "GET", undefined, 20000).then(

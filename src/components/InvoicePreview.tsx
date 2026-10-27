@@ -78,7 +78,7 @@ export function InvoicePreview({
             .join(" ");
           sheet.setAttribute(
             "aria-label",
-            `Invoice page ${n} of ${pdf.numPages}`,
+            `${i.documentType === "quotation" ? "Quotation" : "Invoice"} page ${n} of ${pdf.numPages}`,
           );
           sheet.append(canvas, description);
           container.append(sheet);
@@ -101,7 +101,11 @@ export function InvoicePreview({
   }, [key]);
   return (
     <div className="invoice-preview" aria-busy={state.loading}>
-      {state.loading && <p role="status">Preparing invoice…</p>}
+      {state.loading && (
+        <p role="status">
+          Preparing {invoice.documentType === "quotation" ? "quotation" : "invoice"}…
+        </p>
+      )}
       {state.error && <p role="alert">{state.error}</p>}
       <div className="invoice-paper" ref={host} />
     </div>

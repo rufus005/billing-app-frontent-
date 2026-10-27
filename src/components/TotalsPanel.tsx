@@ -1,7 +1,7 @@
 import { paymentSummary, taxRows } from "../utils/invoicePresentation";
-import { Info } from "lucide-react";
+import { Info, Plus, Trash2 } from "lucide-react";
 import type { Invoice } from "../utils/invoiceTypes";
-import { calculate, money, numeric } from "../utils/calculations";
+import { calculate, invoiceCharges, money, numeric } from "../utils/calculations";
 import { amountToWords } from "../utils/amountToWords";
 export function TotalsPanel({
   invoice: i,
@@ -11,10 +11,13 @@ export function TotalsPanel({
   onChange: (i: Invoice) => void;
 }) {
   const t = calculate(i);
+  const charges = invoiceCharges(i);
+  const updateCharges = (next: typeof charges) =>
+    onChange({ ...i, additionalCharges: next });
   return (
     <section className="card totals">
       <div className="section-title">
-        <h2>Invoice summary</h2>
+        <h2>{i.documentType === "quotation" ? "Quotation summary" : "Invoice summary"}</h2>
         <span className="tag">{t.qty} units</span>
       </div>
       <label className="field">
@@ -95,19 +98,76 @@ export function TotalsPanel({
         <span>Total tax</span>
         <span>{money(t.tax)}</span>
       </div>
-      <label className="total-line">
-        Additional charges (after tax)
-        <input
-          aria-label="Additional charges"
-          type="number"
-          min="0"
-          step="0.01"
-          value={i.additionalCharges || 0}
-          onChange={(e) =>
-            onChange({ ...i, additionalCharges: numeric(e.target.value) })
+      <div className="section-title">
+        <strong>Extra charges</strong>
+        <button
+          className="text-button"
+          onClick={() =>
+            updateCharges([
+              ...charges,
+              { name: "Custom Charge", amount: 0, taxable: false },
+            ])
           }
-        />
-      </label>
+        >
+          <Plus size={15} /> Add Custom Charge
+        </button>
+      </div>
+      {charges.map((charge, index) => (
+        <div className="charge-row" key={index}>
+          <input
+            aria-label={`Charge ${index + 1} name`}
+            value={charge.name}
+            maxLength={100}
+            onChange={(e) =>
+              updateCharges(
+                charges.map((item, n) =>
+                  n === index ? { ...item, name: e.target.value } : item,
+                ),
+              )
+            }
+          />
+          <input
+            aria-label={`Charge ${index + 1} amount`}
+            type="number"
+            min="0"
+            step="0.01"
+            value={charge.amount}
+            onChange={(e) =>
+              updateCharges(
+                charges.map((item, n) =>
+                  n === index
+                    ? { ...item, amount: numeric(e.target.value) }
+                    : item,
+                ),
+              )
+            }
+          />
+          <label>
+            <input
+              type="checkbox"
+              aria-label={`Charge ${index + 1} taxable`}
+              checked={charge.taxable || false}
+              onChange={(e) =>
+                updateCharges(
+                  charges.map((item, n) =>
+                    n === index ? { ...item, taxable: e.target.checked } : item,
+                  ),
+                )
+              }
+            />
+            Taxable
+          </label>
+          <button
+            className="icon-button danger"
+            aria-label={`Delete charge ${index + 1}`}
+            onClick={() =>
+              updateCharges(charges.filter((_, n) => n !== index))
+            }
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      ))}
       <label className="total-line">
         Auto round off
         <input
@@ -133,17 +193,21 @@ export function TotalsPanel({
       <div className="total-line">
         <span>Balance</span>
         <strong>
-          {paymentSummary(i).balance === null
-            ? "Received amount not recorded"
-            : money(paymentSummary(i).balance!)}
+          {i.documentType === "quotation"
+            ? "Not applicable"
+            : paymentSummary(i).balance === null
+              ? "Received amount not recorded"
+              : money(paymentSummary(i).balance!)}
         </strong>
       </div>
       <p className="amount-words">{amountToWords(t.grand)}</p>
       <div className="note">
         <Info size={15} />
         <span>
-          {i.taxMode === "non-gst"
-            ? "Non-GST invoice"
+          {i.documentType === "quotation"
+            ? "Estimate only; quotation is not a payment request."
+            : i.taxMode === "non-gst"
+              ? "Non-GST invoice"
             : i.pricingMode === "exclusive"
               ? "GST is added to your item prices."
               : "GST is included in your item prices."}

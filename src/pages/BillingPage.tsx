@@ -8,6 +8,7 @@ import {
   storageUsage,
 } from "../utils/browserSnapshots";
 import { invoiceSeller } from "../utils/invoicePresentation";
+import { invoiceCharges } from "../utils/calculations";
 import { PartyModal } from "../components/PartyModal";
 import { Dashboard } from "../components/Dashboard";
 import { businessProfileApi } from "../services/api";
@@ -51,7 +52,10 @@ import type {
   BuyerPrice,
   BusinessPaymentSettings,
 } from "../utils/invoiceTypes";
-import { defaultSeller, newInvoice } from "../utils/invoiceTypes";
+import {
+  defaultSeller,
+  newInvoice,
+} from "../utils/invoiceTypes";
 import { read, keys, getLedger } from "../utils/storage";
 import {
   api,
@@ -229,11 +233,16 @@ export default function BillingPage() {
   const saveInvoice = async (status: Invoice["status"]) => {
     setBusy(true);
     try {
+      const isQuotation = invoice.documentType === "quotation";
       const saved = await invoiceApi.save(
         {
           ...invoice,
           seller: invoice.seller || seller,
-          status,
+          additionalCharges: invoiceCharges(invoice),
+          status: isQuotation ? "Draft" : status,
+          quotationStatus: isQuotation
+            ? invoice.quotationStatus || "Draft"
+            : undefined,
           items: invoice.items.map((r) => ({
             ...r,
             finalPrice: r.finalPrice ?? r.price,
@@ -247,11 +256,22 @@ export default function BillingPage() {
         "taxMode",
         "taxJurisdiction",
         "receivedAmount",
+        "documentType",
+        "quotationStatus",
+        "additionalCharges",
       ] as const;
       const missing = fields.filter(
-        (key) =>
-          invoice[key] !== undefined &&
-          JSON.stringify(saved[key]) !== JSON.stringify(invoice[key]),
+        (key) => {
+          if (key === "additionalCharges")
+            return (
+              JSON.stringify(invoiceCharges(saved)) !==
+              JSON.stringify(invoiceCharges(invoice))
+            );
+          return (
+            invoice[key] !== undefined &&
+            JSON.stringify(saved[key]) !== JSON.stringify(invoice[key])
+          );
+        },
       );
       if (missing.length) {
         setInvoice({
@@ -267,7 +287,11 @@ export default function BillingPage() {
       }
       setInvoice(saved);
       await reload();
-      setNotice("Invoice saved to MongoDB.");
+      setNotice(
+        saved.documentType === "quotation"
+          ? "Quotation saved to MongoDB."
+          : "Invoice saved to MongoDB.",
+      );
     } catch (e) {
       setNotice((e as Error).message);
     } finally {
@@ -719,8 +743,15 @@ export default function BillingPage() {
                   <div>
                     <div className="eyebrow">LET’S MAKE IT OFFICIAL</div>
                     <h1>
-                      Create invoice{" "}
-                      <span className="draft-badge">{invoice.status}</span>
+                      Create{" "}
+                      {invoice.documentType === "quotation"
+                        ? "quotation"
+                        : "invoice"}{" "}
+                      <span className="draft-badge">
+                        {invoice.documentType === "quotation"
+                          ? invoice.quotationStatus || "Draft"
+                          : invoice.status}
+                      </span>
                     </h1>
                     <p>A little less paperwork. A little more business.</p>
                   </div>
@@ -909,7 +940,10 @@ export default function BillingPage() {
                       <button
                         className="primary"
                         disabled={
-                          busy || !loaded || invoice.status === "Cancelled"
+                          busy ||
+                          !loaded ||
+                          invoice.status === "Cancelled" ||
+                          invoice.documentType === "quotation"
                         }
                         onClick={() => saveInvoice("Completed")}
                       >
@@ -921,7 +955,9 @@ export default function BillingPage() {
                         }
                         onClick={() => saveInvoice("Draft")}
                       >
-                        Save to Sales as Draft
+                        {invoice.documentType === "quotation"
+                          ? "Save Quotation"
+                          : "Save to Sales as Draft"}
                       </button>
                       <button
                         onClick={async () => {
@@ -991,7 +1027,9 @@ export default function BillingPage() {
                         onClick={() => exportInvoice()}
                       >
                         <Download size={17} />
-                        {busy ? "Preparing invoice…" : "Download PDF"}
+                        {busy
+                          ? "Preparing document…"
+                          : `Download ${invoice.documentType === "quotation" ? "Quotation" : "Invoice"} PDF`}
                       </button>
                       <div className="export-secondary">
                         <button
@@ -1014,7 +1052,11 @@ export default function BillingPage() {
                     <div className="help-note">
                       <ShieldCheck size={18} />
                       <p>
-                        Your invoice is saved on this device.
+                        Your{" "}
+                        {invoice.documentType === "quotation"
+                          ? "quotation"
+                          : "invoice"}{" "}
+                        is saved on this device.
                         <br />
                         <strong>Download a PDF to keep a copy.</strong>
                       </p>

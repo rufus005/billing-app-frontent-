@@ -66,3 +66,35 @@ test('optional exclusive pricing and discounts use the same totals as the API', 
   const total = calculate(invoice);
   expect(total.taxable).toBe(180); expect(total.tax).toBe(32.4); expect(total.grand).toBe(223); expect(total.roundOff).toBe(0.35);
 });
+
+test("custom charges add to totals and taxable charges contribute GST", () => {
+  const inclusive = {
+    ...newInvoice(),
+    items: [{ id: "item", name: "Item", hsn: "", qty: 1, price: 118 }],
+    additionalCharges: [
+      { name: "Delivery", amount: 118, taxable: true },
+      { name: "Packaging", amount: 20 },
+    ],
+  };
+  expect(calculate(inclusive)).toMatchObject({
+    sale: 256,
+    net: 256,
+    taxable: 200,
+    tax: 36,
+    grand: 256,
+  });
+
+  const exclusive = calculate({
+    ...inclusive,
+    pricingMode: "exclusive",
+    items: [{ id: "item", name: "Item", hsn: "", qty: 1, price: 100 }],
+    additionalCharges: [{ name: "Installation", amount: 50, taxable: true }],
+  });
+  expect(exclusive).toMatchObject({
+    sale: 150,
+    net: 150,
+    taxable: 150,
+    tax: 27,
+    grand: 177,
+  });
+});

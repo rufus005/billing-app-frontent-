@@ -2,6 +2,7 @@ import { RecordPayment } from "./RecordPayment";
 import { paymentSummary } from "../utils/invoicePresentation";
 import { useEffect, useState } from "react";
 import type { Invoice } from "../utils/invoiceTypes";
+import { documentNumber } from "../utils/invoiceTypes";
 import { invoiceApi } from "../services/api";
 import { calculate, money } from "../utils/calculations";
 export function SalesManager({
@@ -56,7 +57,11 @@ export function SalesManager({
   }, [search, from, to, revision]);
   const filtered = sales.filter(
     (i) =>
-      (!status || i.status === status) &&
+      (!status ||
+        (status.startsWith("quotation:")
+          ? i.documentType === "quotation" &&
+            (i.quotationStatus || "Draft") === status.slice("quotation:".length)
+          : i.documentType !== "quotation" && i.status === status)) &&
       (!paymentStatus || paymentSummary(i).status === paymentStatus),
   );
   const balances = new Map<
@@ -95,9 +100,20 @@ export function SalesManager({
             Sale status
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All</option>
-              {["Draft", "Completed", "Cancelled"].map((v) => (
-                <option key={v}>{v}</option>
-              ))}
+              <optgroup label="Invoices">
+                {["Draft", "Completed", "Cancelled"].map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Quotations">
+                {["Draft", "Sent", "Accepted", "Converted to Invoice"].map(
+                  (v) => (
+                    <option key={v} value={`quotation:${v}`}>
+                      {v}
+                    </option>
+                  ),
+                )}
+              </optgroup>
             </select>
           </label>
           <label>
@@ -170,20 +186,72 @@ export function SalesManager({
                     <small>{i.buyer.mobile}</small>
                   </td>
                   <td>{i.date}</td>
-                  <td>{i.status}</td>
                   <td>
-                    {paymentSummary(i).status}
-                    <small>
-                      {paymentSummary(i).balance === null
-                        ? "Received amount unavailable"
-                        : money(paymentSummary(i).balance!)}
-                    </small>
+                    {i.documentType === "quotation"
+                      ? `Quotation · ${i.quotationStatus || "Draft"}`
+                      : i.status}
+                  </td>
+                  <td>
+                    {i.documentType === "quotation" ? (
+                      "Not applicable"
+                    ) : (
+                      <>
+                        {paymentSummary(i).status}
+                        <small>
+                          {paymentSummary(i).balance === null
+                            ? "Received amount unavailable"
+                            : money(paymentSummary(i).balance!)}
+                        </small>
+                      </>
+                    )}
                   </td>
                   <td>{money(i.totals?.grand ?? calculate(i).grand)}</td>
                   <td>
                     <button onClick={() => open(i)}>Preview / edit</button>
-                    {i.status === "Completed" && <button onClick={() => setPaymentInvoice(i)}>Record Payment / history</button>}
-                    <button
+                    {i.documentType === "quotation" &&
+                      i.quotationStatus !== "Converted to Invoice" && (
+                        <button
+                          onClick={async () => {
+                            if (
+                              !confirm(
+                                "Convert this quotation to a new invoice?",
+                              )
+                            )
+                              return;
+                            try {
+                              let number = documentNumber("invoice");
+                              let suffix = 1;
+                              while (sales.some((sale) => sale.number === number))
+                                number = `${documentNumber("invoice")}-${suffix++}`;
+                              const converted = await invoiceApi.convert({
+                                ...i,
+                                id: crypto.randomUUID(),
+                                number,
+                                documentType: "invoice",
+                                quotationStatus: undefined,
+                                convertedInvoiceId: undefined,
+                                status: "Draft",
+                                receivedAmount: 0,
+                                payments: undefined,
+                                paymentOpeningReceived: undefined,
+                                revision: 0,
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString(),
+                                totals: undefined,
+                              });
+                              setRevision((v) => v + 1);
+                              notify("Quotation converted to an invoice.");
+                              open(converted);
+                            } catch (e) {
+                              notify((e as Error).message);
+                            }
+                          }}
+                        >
+                          Convert to Invoice
+                        </button>
+                      )}
+                    {i.documentType !== "quotation" && i.status === "Completed" && <button onClick={() => setPaymentInvoice(i)}>Record Payment / history</button>}
+                    {i.documentType !== "quotation" && <button
                       onClick={async () => {
                         if (
                           !confirm("Cancel this invoice and restore its stock?")
@@ -202,7 +270,7 @@ export function SalesManager({
                       }}
                     >
                       Cancel sale
-                    </button>
+                    </button>}
                     <button
                       onClick={async () => {
                         if (

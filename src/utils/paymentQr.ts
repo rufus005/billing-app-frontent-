@@ -6,6 +6,7 @@ export function upiPaymentUri(
   invoice: Invoice,
   payment: BusinessPaymentSettings,
 ) {
+  if (invoice.documentType === "quotation") return "";
   const { balance } = paymentSummary(invoice);
   if (invoice.status === "Cancelled" || balance === 0) return "";
   if (balance === null)
@@ -34,6 +35,7 @@ export async function invoiceQr(
   invoice: Invoice,
   payment: BusinessPaymentSettings,
 ) {
+  if (invoice.documentType === "quotation") return "";
   if (payment.showQrOnInvoices === false) return "";
   const dynamic =
     payment.qrMode === "dynamic" ||

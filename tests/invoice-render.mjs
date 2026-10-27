@@ -151,6 +151,8 @@ try {
       "long",
       "multiple",
       "multipage",
+      "quotation",
+      "charges",
     ].filter(
       (scenario) =>
         !process.env.INVOICE_SCENARIO ||
@@ -169,10 +171,18 @@ try {
           const i = {
             ...newInvoice(),
             id: "sample-18000",
-            number: "INV/2026/42",
+            number:
+              scenario === "quotation" ? "QTN/2026/42" : "INV/2026/42",
+            documentType:
+              scenario === "quotation" ? "quotation" : "invoice",
+            quotationStatus: scenario === "quotation" ? "Accepted" : undefined,
             date: "2026-10-15",
             receivedAmount:
-              scenario === "paid" ? 18000 : scenario === "zero" ? 0 : 5000,
+              scenario === "paid"
+                ? 18000
+                : scenario === "zero" || scenario === "charges"
+                  ? 0
+                  : 5000,
             taxMode: scenario === "non-gst" ? "non-gst" : "gst",
             buyer: {
               name: "Sample Buyer",
@@ -181,6 +191,11 @@ try {
               mobile: "9000000000",
             },
           };
+          if (scenario === "charges")
+            i.additionalCharges = [
+              { name: "Delivery Charge", amount: 118, taxable: true },
+              { name: "Packaging", amount: 20 },
+            ];
           const count =
             scenario === "multipage" ? 75 : scenario === "multiple" ? 8 : 1;
           i.items = Array.from({ length: count }, (_, n) => ({
@@ -317,9 +332,18 @@ try {
         { timeout: 60000 },
       );
       await expect(page.locator('[role="alert"]')).toHaveCount(0);
-      assert.equal(result.totals.grand, 18000);
+      const expectedTotal = scenario === "charges" ? 18138 : 18000;
+      assert.equal(result.totals.grand, expectedTotal);
       const balance =
-        scenario === "paid" ? 0 : scenario === "zero" ? 18000 : 13000;
+        scenario === "quotation"
+          ? null
+          : scenario === "paid"
+            ? 0
+            : scenario === "zero"
+              ? 18000
+              : scenario === "charges"
+                ? expectedTotal
+              : 13000;
       assert.equal(result.summary.balance, balance);
       if (balance) {
         const params = new URL(result.decoded).searchParams;
@@ -348,8 +372,18 @@ try {
         let pdfQr = null;
         let clipped = [];
         for (let n = 1; n <= pdf.numPages; n++) {
-          const p = await pdf.getPage(n),
-            viewport = p.getViewport({ scale: 2 });
+          const p = await pdf.getPage(n);
+          const base = p.getViewport({ scale: 1 });
+          const availableWidth =
+            document.querySelector(".invoice-paper").clientWidth || 794;
+          const scale = Math.min(
+            2,
+            Math.max(
+              1,
+              (availableWidth / base.width) * (window.devicePixelRatio || 1),
+            ),
+          );
+          const viewport = p.getViewport({ scale });
           const c = document.createElement("canvas");
           c.width = Math.ceil(viewport.width);
           c.height = Math.ceil(viewport.height);
@@ -410,8 +444,19 @@ try {
         text,
         /AUTHORISED SIGNATORY FOR DYNAMIC UNIVERSAL MARK(?:E)?TING/,
       );
+      if (scenario === "quotation") {
+        assert.match(text, /QUOTATION \/ ESTIMATE/);
+        assert.match(text, /Quotation No: QTN\/2026\/42/);
+        assert.doesNotMatch(text, /TAX INVOICE|PAYMENT QR CODE|Received Amount/);
+      }
+      if (scenario === "charges") {
+        assert.match(text, /Delivery Charge/);
+        assert.match(text, /Packaging/);
+      }
       assert.doesNotMatch(text, /Special Discount|Return Amount/);
-      assert.match(text, /Rupees Eighteen Thousand Only/);
+      if (scenario === "charges")
+        assert.match(text, /Rupees Eighteen Thousand One Hundred Thirty Eight Only/);
+      else assert.match(text, /Rupees Eighteen Thousand Only/);
       if (scenario === "non-gst") {
         assert.equal(result.totals.tax, 0);
         assert.doesNotMatch(text, /CGST|SGST|IGST/);

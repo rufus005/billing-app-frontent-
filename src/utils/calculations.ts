@@ -1,4 +1,4 @@
-import type { Invoice } from "./invoiceTypes";
+import type { AdditionalCharge, Invoice } from "./invoiceTypes";
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
 export const money = (n: number) =>
@@ -9,12 +9,55 @@ export const money = (n: number) =>
   }).format(n);
 export const numeric = (v: string) =>
   Math.min(1e9, Math.max(0, Number(v) || 0));
+export function invoiceCharges(invoice: Invoice): AdditionalCharge[] {
+  if (typeof invoice.additionalCharges === "number")
+    return invoice.additionalCharges > 0
+      ? [
+          {
+            name: "Additional Charges",
+            amount: invoice.additionalCharges,
+            taxable: false,
+          },
+        ]
+      : [];
+  return invoice.additionalCharges || [];
+}
 export function calculate(i: Invoice) {
+  const charges = invoiceCharges(i);
+  const taxableCharges = charges.filter(
+    (charge) => charge.taxable && i.taxMode !== "non-gst",
+  );
+  const afterTaxCharges = charges
+    .filter((charge) => !taxableCharges.includes(charge))
+    .reduce((sum, charge) => sum + charge.amount, 0);
+  const chargeSubtotal = round(
+    charges.reduce((sum, charge) => sum + charge.amount, 0),
+  );
+  const chargeTaxable = round(
+    taxableCharges.reduce(
+      (sum, charge) =>
+        sum +
+        (i.pricingMode === "exclusive"
+          ? charge.amount
+          : charge.amount / (1 + i.gst / 100)),
+      0,
+    ),
+  );
+  const chargeTax = round(
+    taxableCharges.reduce(
+      (sum, charge) =>
+        sum +
+        (i.pricingMode === "exclusive"
+          ? (charge.amount * i.gst) / 100
+          : charge.amount - charge.amount / (1 + i.gst / 100)),
+      0,
+    ),
+  );
   // Optional pricing fields select the new calculation path. Legacy invoices
   // retain their original algorithm and stored totals until explicitly edited.
   if (
     i.pricingMode === "exclusive" ||
-    i.additionalCharges ||
+    charges.length > 0 ||
     i.autoRoundOff ||
     i.items.some((r) => r.discountPercent)
   ) {
@@ -51,17 +94,18 @@ export function calculate(i: Invoice) {
             ),
           )
         : round(net - taxable);
-    const cgst = round(tax / 2);
-    const beforeRound = round(taxable + tax + (i.additionalCharges || 0));
+    const totalTaxable = round(taxable + chargeTaxable);
+    const totalTax = round(tax + chargeTax);
+    const beforeRound = round(totalTaxable + totalTax + afterTaxCharges);
     const grand = i.autoRoundOff ? Math.round(beforeRound) : beforeRound;
     return {
       qty,
-      sale,
-      net,
-      taxable,
-      tax,
-      cgst,
-      sgst: round(tax - cgst),
+      sale: round(sale + chargeSubtotal),
+      net: round(net + chargeSubtotal),
+      taxable: totalTaxable,
+      tax: totalTax,
+      cgst: round(totalTax / 2),
+      sgst: round(totalTax - round(totalTax / 2)),
       grand,
       roundOff: round(grand - beforeRound),
     };

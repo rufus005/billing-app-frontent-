@@ -3,7 +3,7 @@ import { paymentSummary, taxRows } from "./invoicePresentation";
 import { jsPDF } from "jspdf";
 import autoTable, { type RowInput } from "jspdf-autotable";
 import type { BusinessPaymentSettings, Invoice, Seller } from "./invoiceTypes";
-import { calculate, money } from "./calculations";
+import { calculate, invoiceCharges, money } from "./calculations";
 import { loadPaymentImage, containImage } from "./paymentImage";
 import { formatInvoiceDate } from "./invoicePresentation";
 import { amountToWords } from "./amountToWords";
@@ -46,7 +46,9 @@ export async function generatePDF(
   doc.addFileToVFS("InvoiceSans-Bold.ttf", bold);
   doc.addFont("InvoiceSans-Bold.ttf", "Invoice", "bold");
   doc.setFont("Invoice");
-  doc.setProperties({ title: `Sales Invoice ${i.number}`, author: s.name });
+  const isQuotation = i.documentType === "quotation";
+  const documentLabel = isQuotation ? "Quotation" : "Sales Invoice";
+  doc.setProperties({ title: `${documentLabel} ${i.number}`, author: s.name });
   const qr = await invoiceQr(i, payment);
   const sources = [
     s.logo,
@@ -106,11 +108,17 @@ export async function generatePDF(
     [
       {
         content:
-          i.taxMode === "non-gst" ? "SALES INVOICE · NON-GST" : "TAX INVOICE",
+          isQuotation
+            ? "QUOTATION / ESTIMATE"
+            : i.taxMode === "non-gst"
+              ? "SALES INVOICE · NON-GST"
+              : "TAX INVOICE",
         styles: { fontStyle: "bold", fontSize: 8, cellWidth: 26 },
       },
       {
-        content: "ORIGINAL FOR RECIPIENT",
+        content: isQuotation
+          ? `STATUS: ${i.quotationStatus || "Draft"}`
+          : "ORIGINAL FOR RECIPIENT",
         styles: {
           fontSize: 7,
           textColor: [115, 115, 145],
@@ -174,9 +182,9 @@ export async function generatePDF(
   table(
     [
       [
-        `Invoice No: ${i.number}`,
+        `${isQuotation ? "Quotation" : "Invoice"} No: ${i.number}`,
         {
-          content: `Invoice Date: ${formatInvoiceDate(i.date)}${i.time ? " " + i.time : ""}${i.dueDate ? `\nDue: ${formatInvoiceDate(i.dueDate)}` : ""}`,
+          content: `${isQuotation ? "Quotation" : "Invoice"} Date: ${formatInvoiceDate(i.date)}${i.time ? " " + i.time : ""}${i.dueDate ? `\nDue: ${formatInvoiceDate(i.dueDate)}` : ""}`,
           styles: { halign: "right" },
         },
       ],
@@ -288,32 +296,44 @@ export async function generatePDF(
       money(value),
     ]),
 
-    ...(i.additionalCharges
-      ? [["Additional Charges", money(i.additionalCharges)] as [string, string]]
-      : []),
+    ...invoiceCharges(i).map(
+      (charge): [string, string] => [
+        `${charge.name}${charge.taxable ? " (taxable)" : ""}`,
+        money(charge.amount),
+      ],
+    ),
     ...(t.roundOff
       ? [["Round Off", money(t.roundOff)] as [string, string]]
       : []),
     ["Total Amount", money(t.grand)],
-    [
-      "Received Amount",
-      p.received === null ? "Not recorded" : money(p.received),
-    ],
-    ["Balance Amount", p.balance === null ? "Not recorded" : money(p.balance)],
+    ...(isQuotation
+      ? []
+      : [
+          [
+            "Received Amount",
+            p.received === null ? "Not recorded" : money(p.received),
+          ] as [string, string],
+          [
+            "Balance Amount",
+            p.balance === null ? "Not recorded" : money(p.balance),
+          ] as [string, string],
+        ]),
   ];
-  const bankRows = [
+  const bankRows: [string, string][] = isQuotation
+    ? []
+    : [
     ["Name", s.name],
     ["IFSC Code", s.ifsc],
     ["Account No", s.account],
     ["Bank", [s.bank, s.branch].filter(Boolean).join(", ")],
-  ];
+      ];
   const paymentDetails = [
     payment.payeeName && `UPI Payee Name: ${payment.payeeName}`,
     payment.upiId && `UPI ID:\n${payment.upiId}`,
   ]
     .filter(Boolean)
     .join("\n");
-  if (!qr) {
+  if (!isQuotation && !qr) {
     if (payment.payeeName) bankRows.push(["UPI Payee Name", payment.payeeName]);
     if (payment.upiId) bankRows.push(["UPI ID", payment.upiId]);
   }
@@ -385,7 +405,11 @@ export async function generatePDF(
   const wordsHeight =
     doc.splitTextToSize(wordsText, width * 0.52 - 2.4).length * lineHeight +
     2.4;
-  const footerText = i.declaration ? `Declaration\n${i.declaration}` : "";
+  const footerText = isQuotation
+    ? "Estimate only — this quotation is not a tax invoice."
+    : i.declaration
+      ? `Declaration\n${i.declaration}`
+      : "";
   doc.setFontSize(7);
   const declarationHeight = footerText
     ? doc.splitTextToSize(footerText, width - 2.4).length *
@@ -419,18 +443,19 @@ export async function generatePDF(
         bankHeight + 5 + signatureHeight + declarationHeight,
         rightHeight,
       ) >
-    pageHeight - margin
+    pageHeight - margin - 20
   ) {
     doc.addPage();
     y = margin + 3;
   }
   const footerTop = y;
-  table(
-    [
-      [{ content: "BANK DETAILS", colSpan: 2, styles: { fontStyle: "bold" } }],
-      ...bankRows.map(([label, value]) => [label + ":", value || "—"]),
-    ],
-    {
+  if (!isQuotation)
+    table(
+      [
+        [{ content: "BANK DETAILS", colSpan: 2, styles: { fontStyle: "bold" } }],
+        ...bankRows.map(([label, value]) => [label + ":", value || "—"]),
+      ],
+      {
       tableWidth: bankWidth,
       styles: compactStyles,
       columnStyles: {
@@ -443,8 +468,8 @@ export async function generatePDF(
         top: margin,
         bottom: margin,
       },
-    },
-  );
+      },
+    );
   if (qr) {
     y += 2;
     table(
@@ -532,7 +557,7 @@ export async function generatePDF(
       { content: "", styles: { cellWidth: width * 0.48 } },
       { content: "", styles: { minCellHeight: 29 } },
     ],
-    ...(i.declaration
+    ...(isQuotation || i.declaration
       ? [
           [
             {

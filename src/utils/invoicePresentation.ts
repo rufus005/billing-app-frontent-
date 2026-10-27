@@ -18,10 +18,13 @@ export function invoiceFilename(invoice: Invoice): string {
       .replace(/[^\p{L}\p{N}_-]+/gu, "_")
       .replace(/^_+|_+$/g, "") || fallback;
   const date = formatInvoiceDate(invoice.date).replaceAll("/", "-");
-  return `Invoice_${safe(invoice.buyer.name, "Buyer")}_${safe(invoice.number, "Invoice")}_${safe(date, "Date")}.pdf`;
+  const type = invoice.documentType === "quotation" ? "Quotation" : "Invoice";
+  return `${type}_${safe(invoice.buyer.name, "Buyer")}_${safe(invoice.number, type)}_${safe(date, "Date")}.pdf`;
 }
 
 export function paymentSummary(invoice: Invoice) {
+  if (invoice.documentType === "quotation")
+    return { received: null, balance: null, status: "Not applicable" };
   const total = invoice.totals?.grand ?? calculate(invoice).grand;
   const received = invoice.receivedAmount;
   if (received === undefined || !Number.isFinite(received) || received < 0)

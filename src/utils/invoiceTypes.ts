@@ -112,9 +112,23 @@ export interface PaymentRecord {
   method: "Cash" | "UPI" | "Bank Transfer";
   reference: string;
 }
+export type DocumentType = "invoice" | "quotation";
+export type QuotationStatus =
+  | "Draft"
+  | "Sent"
+  | "Accepted"
+  | "Converted to Invoice";
+export interface AdditionalCharge {
+  name: string;
+  amount: number;
+  taxable?: boolean;
+}
 export interface Invoice {
   pricingMode?: "inclusive" | "exclusive";
-  additionalCharges?: number;
+  additionalCharges?: number | AdditionalCharge[];
+  documentType?: DocumentType;
+  quotationStatus?: QuotationStatus;
+  convertedInvoiceId?: string;
   autoRoundOff?: boolean;
   payments?: PaymentRecord[];
   paymentOpeningReceived?: number;
@@ -184,12 +198,21 @@ export const defaultSettings: BusinessSettings = {
   cgstRate: 9,
   sgstRate: 9,
 };
+export function documentNumber(
+  documentType: DocumentType,
+  date = new Date(),
+): string {
+  return `${documentType === "quotation" ? "QTN" : "INV"}-${date.getFullYear()}-${String(date.getTime()).slice(-6)}`;
+}
 export function newInvoice(
   settings: BusinessSettings = defaultSettings,
+  documentType: DocumentType = "invoice",
 ): Invoice {
   const d = new Date();
   return {
     id: crypto.randomUUID(),
+    documentType,
+    quotationStatus: documentType === "quotation" ? "Draft" : undefined,
     status: "Draft",
     createdAt: d.toISOString(),
     updatedAt: d.toISOString(),
@@ -197,7 +220,7 @@ export function newInvoice(
     declaration: settings.declaration,
     cgstRate: settings.gstEnabled ? settings.cgstRate : 0,
     sgstRate: settings.gstEnabled ? settings.sgstRate : 0,
-    number: `INV-${d.getFullYear()}-${String(d.getTime()).slice(-6)}`,
+    number: documentNumber(documentType, d),
     date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
     time: d.toTimeString().slice(0, 8),
     mode: settings.defaultMode,

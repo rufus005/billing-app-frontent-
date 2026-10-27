@@ -1,6 +1,12 @@
 import { BuyerAddressFields } from "./BuyerAddressFields";
 import { calculate } from "../utils/calculations";
-import type { Buyer, Invoice, Seller } from "../utils/invoiceTypes";
+import {
+  documentNumber,
+  type Buyer,
+  type DocumentType,
+  type Invoice,
+  type Seller,
+} from "../utils/invoiceTypes";
 export function Field({
   label,
   value,
@@ -77,12 +83,60 @@ export function InvoiceDetailsForm({
 }) {
   return (
     <div className="form-grid details-grid">
+      <label className="field">
+        Document type
+        <select
+          aria-label="Document type"
+          value={i.documentType || "invoice"}
+          disabled={i.revision > 0}
+          onChange={(e) => {
+            const documentType = e.target.value as DocumentType;
+            onChange({
+              ...i,
+              documentType,
+              number: documentNumber(documentType),
+              status: "Draft",
+              quotationStatus:
+                documentType === "quotation" ? "Draft" : undefined,
+              convertedInvoiceId: undefined,
+            });
+          }}
+        >
+          <option value="invoice">Invoice</option>
+          <option value="quotation">Quotation / Estimate</option>
+        </select>
+      </label>
       <Field
-        label="Invoice number"
+        label={i.documentType === "quotation" ? "Quotation number" : "Invoice number"}
         value={i.number}
         onChange={(number) => onChange({ ...i, number })}
         maxLength={50}
       />
+      {i.documentType === "quotation" && (
+        <label className="field">
+          Quotation status
+          <select
+            aria-label="Quotation status"
+            value={i.quotationStatus || "Draft"}
+            disabled={i.quotationStatus === "Converted to Invoice"}
+            onChange={(e) =>
+              onChange({
+                ...i,
+                quotationStatus: e.target.value as NonNullable<
+                  Invoice["quotationStatus"]
+                >,
+              })
+            }
+          >
+            {["Draft", "Sent", "Accepted"].map((status) => (
+              <option key={status}>{status}</option>
+            ))}
+            {i.quotationStatus === "Converted to Invoice" && (
+              <option>Converted to Invoice</option>
+            )}
+          </select>
+        </label>
+      )}
       <Field
         label="Invoice date"
         type="date"
@@ -135,30 +189,39 @@ export function InvoiceDetailsForm({
           </select>
         </label>
       )}
-      <p className="muted">
-        Enter the total confirmed receipts, including earlier payments. Saving
-        replaces this total; scanning a QR does not confirm payment.
-      </p>
-      {i.payments?.length ? (
-        <p className="note">
-          Receipts are locked to the payment history. Use Record Payment in
-          Sales.
-        </p>
-      ) : (
-        <Field
-          label="Received amount"
-          type="number"
-          value={i.receivedAmount === undefined ? "" : String(i.receivedAmount)}
-          onChange={(v) =>
-            onChange({
-              ...i,
-              receivedAmount:
-                v === ""
-                  ? undefined
-                  : Math.min(calculate(i).grand, Math.max(0, Number(v) || 0)),
-            })
-          }
-        />
+      {i.documentType !== "quotation" && (
+        <>
+          <p className="muted">
+            Enter the total confirmed receipts, including earlier payments.
+            Saving replaces this total; scanning a QR does not confirm payment.
+          </p>
+          {i.payments?.length ? (
+            <p className="note">
+              Receipts are locked to the payment history. Use Record Payment in
+              Sales.
+            </p>
+          ) : (
+            <Field
+              label="Received amount"
+              type="number"
+              value={
+                i.receivedAmount === undefined ? "" : String(i.receivedAmount)
+              }
+              onChange={(v) =>
+                onChange({
+                  ...i,
+                  receivedAmount:
+                    v === ""
+                      ? undefined
+                      : Math.min(
+                          calculate(i).grand,
+                          Math.max(0, Number(v) || 0),
+                        ),
+                })
+              }
+            />
+          )}
+        </>
       )}
       <label className="field">
         Shipping address
