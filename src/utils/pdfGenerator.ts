@@ -38,7 +38,7 @@ export async function generatePDF(
     format,
     compress: true,
   });
-  const margin = format === "a4" ? 10 : 7;
+  const margin = format === "a4" ? 8 : 6;
   const width = doc.internal.pageSize.getWidth() - margin * 2;
   const [normal, bold] = await fonts();
   doc.addFileToVFS("InvoiceSans.ttf", normal);
@@ -84,7 +84,7 @@ export async function generatePDF(
     textColor: 0,
     lineColor: 0,
     lineWidth: 0,
-    cellPadding: 1.2,
+    cellPadding: 0.8,
     overflow: "linebreak" as const,
   };
   let y = 6;
@@ -135,7 +135,7 @@ export async function generatePDF(
     .filter(Boolean)
     .filter((v) => !s.address.toLowerCase().includes(v!.toLowerCase()))
     .join(", ");
-  y += format === "a4" ? 3 : 2;
+  y += format === "a4" ? 2 : 1;
   const logoBox = format === "a4" ? 32 : 23;
   const sellerDetails = [
     s.address,
@@ -169,13 +169,13 @@ export async function generatePDF(
         },
       ],
     ],
-    { margin: { left: headerLeft, right: margin, top: 13, bottom: 12 } },
+    { margin: { left: headerLeft, right: margin, top: 8, bottom: 7 } },
   );
   if (s.logo) {
     drawImage(0, margin + 1, headerTop - 2, logoBox);
     y = Math.max(y, headerTop + logoBox + 2);
   }
-  y += 2;
+  y += 1;
   doc.setLineWidth(1.8);
   doc.line(margin, y, margin + width, y);
   y += 1;
@@ -194,7 +194,7 @@ export async function generatePDF(
         ...styles,
         fillColor: [229, 229, 229],
         fontStyle: "bold",
-        cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 },
+        cellPadding: { top: 2, bottom: 2, left: 3, right: 3 },
       },
     },
   );
@@ -216,7 +216,7 @@ export async function generatePDF(
     {
       styles: {
         ...styles,
-        cellPadding: { top: 1.2, bottom: 1.2, left: 0, right: 3 },
+        cellPadding: { top: 0.6, bottom: 0.6, left: 0, right: 2 },
       },
       columnStyles: {
         0: { cellWidth: width / 2 },
@@ -228,7 +228,6 @@ export async function generatePDF(
     },
   );
   y += 2;
-  const itemTop = y;
   table(
     i.items.map((r) => {
       const gst = i.taxMode === "non-gst" ? 0 : (r.gstPercent ?? i.gst);
@@ -268,7 +267,7 @@ export async function generatePDF(
         textColor: 0,
         fontStyle: "bold",
         lineWidth: { top: 0.4, bottom: 0.4 },
-        cellPadding: { top: 3, bottom: 3, left: 1.2, right: 1.2 },
+        cellPadding: { top: 1.5, bottom: 1.5, left: 1, right: 1 },
       },
       bodyStyles: { lineWidth: { bottom: 0.1 }, lineColor: 190 },
       columnStyles: {
@@ -337,8 +336,6 @@ export async function generatePDF(
     if (payment.payeeName) bankRows.push(["UPI Payee Name", payment.payeeName]);
     if (payment.upiId) bankRows.push(["UPI ID", payment.upiId]);
   }
-  if (doc.getNumberOfPages() === 1)
-    y = Math.max(y, itemTop + (format === "a4" ? 54 : 24));
   table(
     [
       [
@@ -370,84 +367,15 @@ export async function generatePDF(
   };
   doc.setFont("Invoice", "normal");
   doc.setFontSize(styles.fontSize);
-  const labelWidth = bankWidth * 0.3;
-  const lineHeight = styles.fontSize * 0.3528 * 1.15;
-  const qrSize = 38;
+  const qrSize = format === "a4" ? 34 : 30;
   const qrCellHeight = qrSize + 2;
   const qrColumnWidth = Math.max(bankWidth * 0.5, qrSize + 2);
-  const paymentHeight = qr
-    ? Math.max(
-        qrCellHeight,
-        doc.splitTextToSize(
-          `PAYMENT QR CODE\n\n${paymentDetails}`,
-          bankWidth - qrColumnWidth - 2.4,
-        ).length *
-          lineHeight +
-          2.4,
-      ) + 2
-    : 0;
-  const bankHeight =
-    7 +
-    bankRows.reduce(
-      (height, [label, value]) =>
-        height +
-        Math.max(
-          doc.splitTextToSize(label + ":", labelWidth - 2.4).length,
-          doc.splitTextToSize(value || "—", bankWidth - labelWidth - 2.4)
-            .length,
-        ) *
-          lineHeight +
-        1,
-      0,
-    ) +
-    paymentHeight;
   const wordsText = `Total Amount (in words)\n${amountToWords(t.grand)}`;
-  const wordsHeight =
-    doc.splitTextToSize(wordsText, width * 0.52 - 2.4).length * lineHeight +
-    2.4;
   const footerText = isQuotation
     ? "Estimate only — this quotation is not a tax invoice."
     : i.declaration
       ? `Declaration\n${i.declaration}`
       : "";
-  doc.setFontSize(7);
-  const declarationHeight = footerText
-    ? doc.splitTextToSize(footerText, width - 2.4).length *
-        (7 * 0.3528 * 1.15) +
-      2.4
-    : 0;
-  doc.setFontSize(styles.fontSize);
-  const signatureHeight = 34;
-  const rightHeight =
-    sums.reduce(
-      (height, [label, value]) =>
-        height +
-        Math.max(
-          doc.splitTextToSize(label, width * 0.23 - 2.4).length,
-          doc.splitTextToSize(value, width * 0.12 - 2.4).length,
-        ) *
-          lineHeight +
-        1,
-      0,
-    ) +
-    4 +
-    5 +
-    wordsHeight +
-    3 +
-    signatureHeight +
-    declarationHeight;
-  const pageHeight = doc.internal.pageSize.getHeight();
-  if (
-    y +
-      Math.max(
-        bankHeight + 5 + signatureHeight + declarationHeight,
-        rightHeight,
-      ) >
-    pageHeight - margin - 20
-  ) {
-    doc.addPage();
-    y = margin + 3;
-  }
   const footerTop = y;
   if (!isQuotation)
     table(
@@ -456,18 +384,18 @@ export async function generatePDF(
         ...bankRows.map(([label, value]) => [label + ":", value || "—"]),
       ],
       {
-      tableWidth: bankWidth,
-      styles: compactStyles,
-      columnStyles: {
-        0: { cellWidth: labelWidth },
-        1: { cellWidth: bankWidth - labelWidth },
-      },
-      margin: {
-        left: margin,
-        right: margin + width - bankWidth,
-        top: margin,
-        bottom: margin,
-      },
+        tableWidth: bankWidth,
+        styles: compactStyles,
+        columnStyles: {
+          0: { cellWidth: bankWidth * 0.3 },
+          1: { cellWidth: bankWidth * 0.7 },
+        },
+        margin: {
+          left: margin,
+          right: margin + width - bankWidth,
+          top: margin,
+          bottom: margin,
+        },
       },
     );
   if (qr) {
@@ -539,7 +467,7 @@ export async function generatePDF(
       },
     },
   );
-  y += 5;
+  y += 3;
   table([
     [
       { content: "", styles: { cellWidth: width * 0.48 } },
@@ -551,7 +479,7 @@ export async function generatePDF(
   ]);
   y = Math.max(y, bankBottom);
   // Follow the payment summary instead of stretching the footer to the page edge.
-  y += 5;
+  y += 3;
   const footerRows: RowInput[] = [
     [
       { content: "", styles: { cellWidth: width * 0.48 } },

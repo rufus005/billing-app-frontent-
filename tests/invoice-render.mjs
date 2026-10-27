@@ -149,6 +149,7 @@ try {
       "paid",
       "non-gst",
       "long",
+      "six",
       "multiple",
       "multipage",
       "quotation",
@@ -197,7 +198,13 @@ try {
               { name: "Packaging", amount: 20 },
             ];
           const count =
-            scenario === "multipage" ? 75 : scenario === "multiple" ? 8 : 1;
+            scenario === "multipage"
+              ? 75
+              : scenario === "multiple"
+                ? 8
+                : scenario === "six"
+                  ? 6
+                  : 1;
           i.items = Array.from({ length: count }, (_, n) => ({
             id: String(n),
             name:
@@ -465,6 +472,8 @@ try {
         assert.ok(result.pages > 1);
         assert.match(text, /Product 75/);
       }
+      if (scenario === "six" && format === "a4")
+        assert.equal(result.pages, 1, "six A4 item rows and the full footer fit on page 1");
       console.log(
         `PASS ${scenario} ${format}: ${result.pages} page(s), exact preview/PDF pixels, decoded QR, totals, text margins`,
       );
