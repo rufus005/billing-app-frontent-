@@ -40,6 +40,7 @@ export async function generatePDF(
   });
   const margin = format === "a4" ? 8 : 6;
   const width = doc.internal.pageSize.getWidth() - margin * 2;
+  const pageHeight = doc.internal.pageSize.getHeight();
   const [normal, bold] = await fonts();
   doc.addFileToVFS("InvoiceSans.ttf", normal);
   doc.addFont("InvoiceSans.ttf", "Invoice", "normal");
@@ -280,6 +281,7 @@ export async function generatePDF(
       },
     },
   );
+  y += format === "a4" ? 12 : 8;
   const t = i.totals || calculate(i),
     p = paymentSummary(i);
   const sums: [string, string][] = [
@@ -478,8 +480,7 @@ export async function generatePDF(
     ],
   ]);
   y = Math.max(y, bankBottom);
-  // Follow the payment summary instead of stretching the footer to the page edge.
-  y += 3;
+  y = Math.max(y + 3, pageHeight - margin - 44);
   const footerRows: RowInput[] = [
     [
       { content: "", styles: { cellWidth: width * 0.48 } },
